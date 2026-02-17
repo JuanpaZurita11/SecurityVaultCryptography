@@ -24,11 +24,12 @@ This **vault** addresses the risk of data breaches by ensuring that even if an a
 
 ## 2. Architecture Diagram
 
+```mermaid
 graph LR
-subgraph User_Device [User Device - TRUSTED]
-User((User))
-App[Application/Vault]
-KStore[(Key Store: Private Keys)]
+    subgraph User_Device [User Device - TRUSTED]
+        User((User))
+        App[Application/Vault]
+        KStore[(Key Store: Private Keys)]
 
         subgraph Crypto_Ops [Secure Processing]
             Enc[Encryption Engine]
@@ -55,6 +56,7 @@ KStore[(Key Store: Private Keys)]
     classDef untrusted fill:#f8d7da,stroke:#dc3545,stroke-width:2px;
     class User_Device trusted;
     class Server_Storage untrusted;
+```
 
 ## 3. Securirty Requeriments
 
