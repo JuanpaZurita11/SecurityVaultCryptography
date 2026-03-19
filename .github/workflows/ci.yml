@@ -1,0 +1,28 @@
+name: D2 - Secure Symmetric Encryption
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  basic_test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v5
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instala Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Secure_Symmetric_Encryption_Module/tests/requirements.txt
+
+      - name: Realiza las pruebas
+        run: |
+          pytest Secure_Symmetric_Encryption_Module/tests/
