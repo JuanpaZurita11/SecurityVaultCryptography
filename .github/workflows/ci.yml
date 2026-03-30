@@ -1,4 +1,4 @@
-name: D2 - Secure Symmetric Encryption
+name: D2 and D3 tests
 
 on:
   push:
@@ -23,6 +23,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r Secure_Symmetric_Encryption_Module/tests/requirements.txt
 
-      - name: Realiza las pruebas
+      - name: Pruebas D2 (Secure Symmetric Encryption)
         run: |
           pytest Secure_Symmetric_Encryption_Module/tests/
+
+      - name: Pruebas D3 (Hybrid Encryption)
+        run: |
+          pytest Secure_Hybrid_Encryption_Module/tests/
