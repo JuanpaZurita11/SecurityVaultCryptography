@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hybrid Crypto Lab</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            line-height: 1.5;
+        }
+
+        h1 { text-align: center; color: var(--primary); margin-bottom: 2rem; }
+
+        section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        h2 { margin-top: 0; font-size: 1.25rem; border-bottom: 2px solid var(--bg); padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+
+        .field { margin-bottom: 1.25rem; }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"],
+        input[type="file"],
+        textarea {
+            width: 100%;
+            padding: 0.6rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        textarea { resize: vertical; font-family: monospace; }
+
+        small { color: #64748b; display: block; margin-top: 0.25rem; }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+            width: 100%;
+        }
+
+        button:hover { background: var(--primary-hover); }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 2rem 0;
+        }
+
+        .console-note {
+            background: #fff7ed;
+            border-left: 4px solid #f97316;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🔐 Hybrid Crypto Lab</h1>
+
+    <div class="console-note">
+        <strong>Nota:</strong> Pulsa (F12) para abrir la consola de desarrollador.
+    </div>
+
+    <section id="encrypt-section">
+        <h2>1. Cifrar Nuevo Archivo</h2>
+
+        <div class="field">
+            <label for="fileToEncrypt">Seleccionar Archivo:</label>
+            <input type="file" id="fileToEncrypt">
+        </div>
+
+        <button id="btnEncrypt">Cifrar y Descargar Archivos</button>
+    </section>
+
+    <div class="divider"></div>
+
+    <section id="decrypt-section">
+        <h2>2. Descifrar Archivo</h2>
+
+        <div class="field">
+            <label for="cipherFile">Archivo Cifrado (.enc):</label>
+            <input type="file" id="cipherFile">
+        </div>
+
+        <div class="field">
+            <label for="metadataFile">Archivo Metadata (JSON):</label>
+            <input type="file" id="metadataFile">
+        </div>
+
+
+        <button id="btnDecrypt" style="background-color: #059669;">Validar y Descifrar</button>
+    </section>
+
+    <script type="module" src="./playground.ts"></script>
+</body>
+</html>
