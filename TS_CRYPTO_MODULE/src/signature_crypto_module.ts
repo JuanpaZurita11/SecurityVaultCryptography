@@ -201,7 +201,7 @@ export class SignatureCryptoModule {
     const derivedFingerprint = sha256(pubKey);
 
     if (!equalBytes(digest, derivedFingerprint)){
-      throw new Error("Fingerprint mismatch: The provided public key does not match the signature's signer info.");
+      throw new Error("Error durante el proceso de verificación de firma");
     }
 
     const msg = {
@@ -215,7 +215,7 @@ export class SignatureCryptoModule {
     const msgDump = new TextEncoder().encode(JSON.stringify(msg));
     const signatureBytes = new Uint8Array(this.str2ab(atob(container.signature)));
     if (!ed25519.verify(signatureBytes, msgDump, new Uint8Array(this.str2ab(atob(senderPublicKey))))){
-      throw new Error("Signature verification failed: The signature does not match the message and / or public key.");
+      throw new Error("Error durante el proceso de verificación de firma");
     }
     return true;
   }
