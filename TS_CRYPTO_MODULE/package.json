@@ -2,20 +2,19 @@
   "name": "ts_crypto_module",
   "version": "1.0.0",
   "type": "module",
+  "main": "src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest",
-    "dev": "vite"
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "jsdom": "^29.0.2",
     "typescript": "^6.0.3",
-    "vite": "^8.0.10",
     "vitest": "^4.1.5"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
-    "@noble/hashes": "^2.2.0"
+    "@noble/hashes": "^2.2.0",
+    "fast-json-stable-stringify": "^2.1.0"
   }
 }

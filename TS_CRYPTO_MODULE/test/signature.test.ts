@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { KeyManager, SignatureCryptoModule } from '../src/signature_crypto_module';
-
+import { KeyManager } from '../src/key_manager.js';
+import { b64ToBytes, CipherObject, EncryptionMetadata, SignatureCryptoModule, SignContainer} from '../src/signature_crypto_module.js';
+import { KeyWrap } from '../src/signature_crypto_module.js';
 
 
 describe('SignatureCryptoModule Integrity Tests', () => {
   let keyManager: KeyManager;
-  let signatureEnc: SignatureCryptoModule;
+  let signatureModule: SignatureCryptoModule;
 
   const message = "Highly sensitive content";
   const rawData = new TextEncoder().encode(message);
@@ -13,83 +14,107 @@ describe('SignatureCryptoModule Integrity Tests', () => {
 
   beforeEach(() => {
     keyManager = new KeyManager();
-    signatureEnc = new SignatureCryptoModule();
+    signatureModule = new SignatureCryptoModule();
   });
 
-  it('should accept a valid signature', () => {
+  it('should allow multiple recipients to decrypt the message', () => {
     const ownerKeys = keyManager.generate_key_pair();
     const user1Keys = keyManager.generate_key_pair();
     const user2Keys = keyManager.generate_key_pair();
 
-    const cipherObject = {
+    const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
       recipients: [
-        { username: 'Juan', key: ownerKeys.publicKey },
-        { username: 'Alice', key: user1Keys.publicKey },
-        { username: 'Bob', key: user2Keys.publicKey }
+        { username: 'Juan', publicKey: ownerKeys.publicKey },
+        { username: 'Alice', publicKey: user1Keys.publicKey },
+        { username: 'Bob', publicKey: user2Keys.publicKey }
       ]
     };
 
-    const container = signatureEnc.generate_signature(
+    const container: SignContainer = signatureModule.create_container(
       ownerKeys.privateKey,
       ownerKeys.publicKey,
       "Juan",
       cipherObject
     );
 
-    if (signatureEnc.validate_signature(container, ownerKeys.publicKey)){
-      console.log("Signature is valid.");
+    // Se verifica que el contenedor sea válido antes de intentar el descifrado
 
-      const aliceWrap = container.recipients.find(r => r.username === 'Alice');
-      if (!aliceWrap) throw new Error("Alice wrap not found");
+    if (signatureModule.verify_container(container, ownerKeys.publicKey)){
 
-      const metaData = {
-        metaData: container.metaData,
-        nonce: container.nonce,
-        recipients: container.recipients,
+      const metaData : EncryptionMetadata = {
+        ...container.metaData
       }
 
-      const originalCipherBase64 = container.cipherText + container.tag;
-      const cipherText = new Uint8Array(signatureEnc.str2ab(atob(originalCipherBase64)));
+      const cipherText = b64ToBytes(container.cipherText);
 
-      const decrypted1 = signatureEnc.decrypt_file(
-        metaData,
+      const aliceWrap = container.metaData.recipients.find( (r : KeyWrap)=> r.username === 'Alice');
+      if (!aliceWrap) throw new Error("Alice wrap not found");
+
+
+      const decrypted1 = signatureModule.decrypt_file(
         cipherText,
+        metaData,
         user1Keys.privateKey,
         aliceWrap
       );
 
-      // 5. Intento de descifrado: Usuario 2 (Bob)
-      const bobWrap = metaData.recipients.find(r => r.username === 'Bob');
+      const bobWrap = metaData.recipients.find( (r : KeyWrap)=> r.username === 'Bob');
       if (!bobWrap) throw new Error("Bob wrap not found");
 
-      const decrypted2 = signatureEnc.decrypt_file(
-        metaData,
+      const decrypted2 = signatureModule.decrypt_file(
         cipherText,
+        metaData,
         user2Keys.privateKey,
         bobWrap
       );
 
-      // 6. Validar resultados
-      expect(new TextDecoder().decode(decrypted1)).toBe(message);
-      expect(new TextDecoder().decode(decrypted2)).toBe(message);
+      const aliceDecrypted = new TextDecoder().decode(decrypted1);
+      const bobDecrypted = new TextDecoder().decode(decrypted2);
+      console.log("Alice decrypted:", aliceDecrypted);
+      console.log("Bob decrypted:", bobDecrypted);
+
+      expect(aliceDecrypted).toBe(message);
+      expect(bobDecrypted).toBe(message);
     }
 
   });
 
-  it('should reject when ciphertext is modified', () => {
+  it('should acccept a valid signature', () => {
     const ownerKeys = keyManager.generate_key_pair();
 
-    const cipherObject = {
+    const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
       recipients: [
-        { username: 'Juan', key: ownerKeys.publicKey }
+        { username: 'Juan', publicKey: ownerKeys.publicKey }
       ]
     };
 
-    const container = signatureEnc.generate_signature(
+    const container: SignContainer = signatureModule.create_container(
+      ownerKeys.privateKey,
+      ownerKeys.publicKey,
+      "Juan",
+      cipherObject
+    );
+
+    expect(signatureModule.verify_container(container, ownerKeys.publicKey)).toBe(true);
+  });
+
+  it('should reject when ciphertext is modified', () => {
+
+    const ownerKeys = keyManager.generate_key_pair();
+
+    const cipherObject : CipherObject = {
+      data: rawData,
+      file_type: fileType,
+      recipients: [
+        { username: 'Juan', publicKey: ownerKeys.publicKey }
+      ]
+    };
+
+    const container: SignContainer = signatureModule.create_container(
       ownerKeys.privateKey,
       ownerKeys.publicKey,
       "Juan",
@@ -100,23 +125,22 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     const original = container.cipherText;
     container.cipherText = original.substring(0, original.length - 1) + (original.endsWith('A') ? 'B' : 'A');
 
-    expect(() => {
-      signatureEnc.validate_signature(container, ownerKeys.publicKey);
-    }).toThrow();
+    expect(signatureModule.verify_container(container, ownerKeys.publicKey)).toBe(false);
   });
 
   it('should reject when metadata is modified', () => {
+
     const ownerKeys = keyManager.generate_key_pair();
 
-    const cipherObject = {
+    const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
       recipients: [
-        { username: 'Juan', key: ownerKeys.publicKey }
+        { username: 'Juan', publicKey: ownerKeys.publicKey }
       ]
     };
 
-    const container = signatureEnc.generate_signature(
+    const container: SignContainer = signatureModule.create_container(
       ownerKeys.privateKey,
       ownerKeys.publicKey,
       "Juan",
@@ -126,23 +150,21 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     // Alterar la metadata (ej. cambiar el timestamp o el tipo de archivo)
     container.metaData.file_type = "application/malicious";
 
-    expect(() => {
-      signatureEnc.validate_signature(container, ownerKeys.publicKey);
-    }).toThrow();
+    expect(signatureModule.verify_container(container, ownerKeys.publicKey)).toBe(false);
   });
 
-  it('should reject when the wrong public key is used for validation', () => {
+  it('should reject when the wrong public key is used for container signature validation', () => {
     const ownerKeys = keyManager.generate_key_pair();
 
-    const cipherObject = {
+    const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
       recipients: [
-        { username: 'Juan', key: ownerKeys.publicKey }
+        { username: 'Juan', publicKey: ownerKeys.publicKey }
       ]
     };
 
-    const container = signatureEnc.generate_signature(
+    const container: SignContainer = signatureModule.create_container(
       ownerKeys.privateKey,
       ownerKeys.publicKey,
       "Juan",
@@ -152,121 +174,81 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     const attackerKeys = keyManager.generate_key_pair();
 
     // El validador intenta usar la llave del atacante en lugar de la de Alice
-    expect(() => {
-      signatureEnc.validate_signature(container, attackerKeys.publicKey);
-    }).toThrow(); // Fallará por mismatch de fingerprint o verificación de firma
+    expect(signatureModule.verify_container(container, attackerKeys.publicKey)
+    ).toBe(false);
   });
 
-  it('should fail if signature is removed or missing', () => {
-    const ownerKeys = keyManager.generate_key_pair();
 
-    const cipherObject = {
+  it('should reject when a recipient wrong public key is used for decrypt', () => {
+    const ownerKeys = keyManager.generate_key_pair();
+    const user1Keys = keyManager.generate_key_pair();
+    const user2Keys = keyManager.generate_key_pair();
+
+    const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
       recipients: [
-        { username: 'Juan', key: ownerKeys.publicKey }
+        { username: 'Juan', publicKey: ownerKeys.publicKey },
+        { username: 'Alice', publicKey: user1Keys.publicKey },
       ]
     };
 
-    const container = signatureEnc.generate_signature(
+    const container: SignContainer = signatureModule.create_container(
       ownerKeys.privateKey,
       ownerKeys.publicKey,
       "Juan",
       cipherObject
     );
 
-    container.signature = "";
+    // Se verifica que el contenedor sea válido antes de intentar el descifrado
 
-    expect(() => {
-      signatureEnc.validate_signature(container, ownerKeys.publicKey);
-    }).toThrow();
+    if (signatureModule.verify_container(container, ownerKeys.publicKey)){
+
+      const metaData : EncryptionMetadata = {
+        ...container.metaData
+      }
+
+      const cipherText = b64ToBytes(container.cipherText);
+
+      const aliceWrap = container.metaData.recipients.find( (r : KeyWrap)=> r.username === 'Alice');
+      if (!aliceWrap) throw new Error("Alice wrap not found");
+
+      expect(
+        () => {
+          signatureModule.decrypt_file(
+            cipherText,
+            metaData,
+            user2Keys.privateKey,
+            aliceWrap
+          );
+        }
+      ).toThrow();
+
+    }
   });
-});
 
+  it('should fail if signature is removed or missing', () => {
+    const ownerKeys = keyManager.generate_key_pair();
 
-/*
-describe('SignatureCryptoModule Tests', () => {
-  let keyManager: KeyManager;
-  let signatureEnc: SignatureCryptoModule;
-
-  // Datos de prueba
-  const message = "Top Secret Data";
-  const rawData = new TextEncoder().encode(message);
-  const fileType = "text/plain";
-
-  beforeEach(() => {
-    keyManager = new KeyManager();
-    signatureEnc = new SignatureCryptoModule();
-  });
-
-  it('should allow two different recipients to decrypt the same file using their private keys', () => {
-    // 1. Generar llaves para los involucrados
-    const user1Keys = keyManager.generate_key_pair();
-    const user2Keys = keyManager.generate_key_pair();
-
-    // 2. Configurar el objeto de cifrado
-    const cipherObject = {
+    const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
       recipients: [
-        { username: 'Alice', key: user1Keys.publicKey },
-        { username: 'Bob', key: user2Keys.publicKey }
+        { username: 'Juan', publicKey: ownerKeys.publicKey }
       ]
     };
 
-    // 3. Ejecutar el cifrado híbrido
-    const { cipherText, metaData } = signatureEnc.encrypt_file(cipherObject);
-
-
-    // 4. Intento de descifrado: Usuario 1 (Alice)
-    // Buscamos su "key wrap" específico en los metadatos
-    const aliceWrap = metaData .recipients.find(r => r.username === 'Alice');
-    if (!aliceWrap) throw new Error("Alice wrap not found");
-
-    const decrypted1 = signatureEnc.decrypt_file(
-      metaData,
-      cipherText,
-      user1Keys.privateKey,
-      aliceWrap
+    const container: SignContainer = signatureModule.create_container(
+      ownerKeys.privateKey,
+      ownerKeys.publicKey,
+      "Juan",
+      cipherObject
     );
 
-    // 5. Intento de descifrado: Usuario 2 (Bob)
-    const bobWrap = metaData.recipients.find(r => r.username === 'Bob');
-    if (!bobWrap) throw new Error("Bob wrap not found");
+    delete (container as any).signature; // Eliminar la firma
 
-    const decrypted2 = signatureEnc.decrypt_file(
-      metaData,
-      cipherText,
-      user2Keys.privateKey,
-      bobWrap
-    );
-
-    // 6. Validar resultados
-    expect(new TextDecoder().decode(decrypted1)).toBe(message);
-    expect(new TextDecoder().decode(decrypted2)).toBe(message);
-  });
-
-  it('should fail decryption if the wrong private key is used', () => {
-    const user1Keys = keyManager.generate_key_pair();
-    const attackerKeys = keyManager.generate_key_pair();
-
-    const cipherObject = {
-      data: rawData,
-      file_type: fileType,
-      recipients: [{ username: 'Alice', key: user1Keys.publicKey }]
-    };
-
-    const { cipherText, metaData } = signatureEnc.encrypt_file(cipherObject);
-
-    // Intentar descifrar el paquete de Alice con la llave del atacante
     expect(() => {
-      signatureEnc.decrypt_file(
-        metaData,
-        cipherText,
-        attackerKeys.privateKey,
-        metaData.recipients[0]
-      );
+      signatureModule.verify_container(container, ownerKeys.publicKey);
     }).toThrow();
   });
 });
-*/
