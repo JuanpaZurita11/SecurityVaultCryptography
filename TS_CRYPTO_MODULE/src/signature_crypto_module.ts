@@ -44,6 +44,7 @@ export interface KeyWrap{
   username: string,
   wrapNonce: string,
   wrappedKey: string
+
 }
 
 export interface EncryptionMetadata extends AAD{

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { KeyManager } from '../src/key_manager.js';
-import { b64ToBytes, CipherObject, EncryptionMetadata, SignatureCryptoModule, SignContainer} from '../src/signature_crypto_module.js';
+import { b64ToBytes, CipherObject, EncryptionMetadata, SignatureCryptoModule, SignContainer, bytesToB64} from '../src/signature_crypto_module.js';
 import { KeyWrap } from '../src/signature_crypto_module.js';
+import { sha256 } from '@noble/hashes/webcrypto.js';
 
 
 describe('SignatureCryptoModule Integrity Tests', () => {
@@ -49,6 +50,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
 
       const cipherText = b64ToBytes(container.cipherText);
 
+      //Alice
       const aliceWrap = container.metaData.recipients.find( (r : KeyWrap)=> r.username === 'Alice');
       if (!aliceWrap) throw new Error("Alice wrap not found");
 
@@ -60,6 +62,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
         aliceWrap
       );
 
+      //Bob
       const bobWrap = metaData.recipients.find( (r : KeyWrap)=> r.username === 'Bob');
       if (!bobWrap) throw new Error("Bob wrap not found");
 
@@ -70,19 +73,34 @@ describe('SignatureCryptoModule Integrity Tests', () => {
         bobWrap
       );
 
+      //Owner
+      const ownerWrap = metaData.recipients.find( (r : KeyWrap)=> r.username === 'Juan');
+      if (!ownerWrap) throw new Error("Owner wrap not found");
+
+      const decryptedOwner = signatureModule.decrypt_file(
+        cipherText,
+        metaData,
+        ownerKeys.privateKey,
+        ownerWrap
+      );
+
       const aliceDecrypted = new TextDecoder().decode(decrypted1);
       const bobDecrypted = new TextDecoder().decode(decrypted2);
+      const ownerDecrypted = new TextDecoder().decode(decryptedOwner);
       console.log("Alice decrypted:", aliceDecrypted);
       console.log("Bob decrypted:", bobDecrypted);
+      console.log("Owner decrypted:", ownerDecrypted);
 
       expect(aliceDecrypted).toBe(message);
       expect(bobDecrypted).toBe(message);
+      expect(ownerDecrypted).toBe(message);
     }
 
   });
 
-  it('should acccept a valid signature', () => {
+  it('should acccept a valid signature', async () => {
     const ownerKeys = keyManager.generate_key_pair();
+    const aliceKeys = keyManager.generate_key_pair();
 
     const cipherObject : CipherObject = {
       data: rawData,
@@ -99,6 +117,9 @@ describe('SignatureCryptoModule Integrity Tests', () => {
       cipherObject
     );
 
+    const fingerprintOwner = bytesToB64( await sha256(ownerKeys.publicKey) );
+
+    expect(container.metaData.owner_fingerprint).toBe(fingerprintOwner);
     expect(signatureModule.verify_container(container, ownerKeys.publicKey)).toBe(true);
   });
 
@@ -251,4 +272,53 @@ describe('SignatureCryptoModule Integrity Tests', () => {
       signatureModule.verify_container(container, ownerKeys.publicKey);
     }).toThrow();
   });
+
+  it('should allow the decryption even after exporting and importing keys', async () => {
+    const ownerKeys = keyManager.generate_key_pair();
+
+    const publicPem = await keyManager.serialize_public_key_pem(ownerKeys.publicKey);
+    const privatePem = await keyManager.serialize_private_key_pem(ownerKeys.privateKey);
+
+    const importedPublicKey = await keyManager.deserialize_public_key_pem(publicPem);
+    const importedPrivateKey = await keyManager.deserialize_private_key_pem(privatePem);
+
+    const cipherObject : CipherObject = {
+      data: rawData,
+      file_type: fileType,
+      recipients: [
+        { username: 'Juan', publicKey: ownerKeys.publicKey }
+      ]
+    };
+
+    const container: SignContainer = signatureModule.create_container(
+      ownerKeys.privateKey,
+      ownerKeys.publicKey,
+      "Juan",
+      cipherObject
+    );
+
+    expect(signatureModule.verify_container(container, importedPublicKey)).toBe(true);
+
+    const metaData : EncryptionMetadata = {
+      ...container.metaData
+    }
+
+    const cipherText = b64ToBytes(container.cipherText);
+
+    const ownerWrap = metaData.recipients.find( (r : KeyWrap)=> r.username === 'Juan');
+    if (!ownerWrap) throw new Error("Owner wrap not found");
+
+    const decryptedOwner = signatureModule.decrypt_file(
+      cipherText,
+      metaData,
+      importedPrivateKey,
+      ownerWrap
+    );
+
+    const ownerDecrypted = new TextDecoder().decode(decryptedOwner);
+    console.log("Owner decrypted:", ownerDecrypted);
+
+    expect(ownerDecrypted).toBe(message);
+  });
+
 });
