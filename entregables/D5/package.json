@@ -1,5 +1,5 @@
 {
-  "name": "ts_crypto_module",
+  "name": "d5-crypto",
   "version": "1.0.0",
   "type": "module",
   "main": "src/index.ts",

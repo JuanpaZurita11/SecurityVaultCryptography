@@ -1,5 +1,5 @@
 import React, { useState, type ChangeEvent } from 'react';
-import { KeyManager, bytesToB64 } from 'ts_crypto_module';
+import { KeyManager, bytesToB64 } from 'd5-crypto';
 
 const AdministradorDeLlaves: React.FC = () => {
   // Tipando explícitamente los estados
