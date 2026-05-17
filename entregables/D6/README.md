@@ -127,7 +127,7 @@ erDiagram
     CONTAINERS {
         UUID container_id PK
         JSON container_file
-        TEXT ("active" | "deprecated") status
+        TEXT status
     }
 
     USER_CONTAINERS {
