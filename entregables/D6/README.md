@@ -216,9 +216,9 @@ Since a weak password has very few combinations, the attacker can systematically
 > KeyWrap
 ```json
 {
-    username: string,
-    wrapNonce: Base64 string,
-    wrappedKey: Base64 string,
-    ephimeral_pub: Base64 string,
+    "username": string,
+    "wrapNonce": Base64 string,
+    "wrappedKey": Base64 string,
+    "ephimeral_pub": Base64 string,
 }
 ```
