@@ -1,4 +1,4 @@
-# D1 - Secure Symmetric Encryption Module
+# D2  Secure Symmetric Encryption Module
 
 ## Module Description
 
