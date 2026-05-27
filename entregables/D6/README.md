@@ -169,4 +169,56 @@ Since a weak password has very few combinations, the attacker can systematically
 
 3. **Client-Side Computational Overhead**: To honor the Zero-Trust paradigm, all encryption, decryption, and key derivation happen strictly on the client side (the browser or local runtime) so the central database never sees plaintext data. However, if a user owns a large number ($N$) of containers, processing the rebuild queue requires computing the 524k-iteration PBKDF2 matrix and re-wrapping multiple keys sequentially. This heavy cryptographic workload can temporarily spike CPU usage and lag or freeze single-threaded JavaScript environments.
 
+## **Container Structure**
 
+```json
+{
+  "metaData": {
+    "file_type": MIME TYPES,
+    "filename": string,
+    "timestamp": ISO 8601 string,
+    "owner_fingerprint": Base64 string,
+    "ownerWrap":{
+        wrapNonce,
+        wrappedKey,
+        ephimeral_pub,
+    },
+    "encryption": {
+      "cipher": "XChacha20-Poly1305",
+      "key_size_bits": "256",
+      "nonce_size_bits": "192",
+      "tag_size_bits": "128"
+    },
+    "keyWrapping": {
+      "scheme": "ECIES-STYLE",
+      "asymmetric": {
+        "curve": "X255519",
+        "kdf": {
+          "alg": "HKDF",
+          "hash": "SHA-256"
+        }
+      },
+      "symmetric": {
+        "cipher": "XChaCha20",
+        "key_size_bits": 256
+      }
+    },
+    "recipients": KeyWrap[],
+    "nonce": Base64 string
+  },
+  "cipherText_w_tag": Base64 string,
+  "signature_alg": "Ed25519",
+  "signer_id": string,
+  "signature": Base64 string
+}
+```
+
+> KeyWrap
+```json
+{
+    "username": string,
+    "wrapNonce": Base64 string,
+    "wrappedKey": Base64 string,
+    "ephimeral_pub": Base64 string,
+}
+```
