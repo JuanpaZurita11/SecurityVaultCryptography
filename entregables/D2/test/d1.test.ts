@@ -1,5 +1,5 @@
 import { describe, it, expect} from 'vitest';
-import { SymmetricEncryption, CipherObject, bytesToB64, b64ToBytes} from '../src/d1.js';
+import { SymmetricEncryption, CipherObject, bytesToB64, b64ToBytes} from '../src/d2.js';
 
 
 describe('SignatureCryptoModule Integrity Tests', () => {

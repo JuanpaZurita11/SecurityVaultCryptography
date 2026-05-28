@@ -10,6 +10,10 @@
  * encriptación directamente desde las mismas llaves Ed25519 de firma
  * (via `toMontgomery`), eliminando la necesidad de gestionar dos pares de llaves.
  *
+ * La lista de destinatarios ahora es protegida por la firma, lo que permite sacarla del AAD
+ * y modificarla sin invalidar el tag del ciphertext.
+ *
+ *
  * **Esquema ECIES-style:**
  * ```
  * Para cada destinatario:
@@ -43,6 +47,7 @@ import { equalBytes, randomBytes } from "@noble/ciphers/utils.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { xchacha20poly1305, xchacha20 } from "@noble/ciphers/chacha.js";
 import stringify from "fast-json-stable-stringify";
+import { z } from "zod";
 
 // Interfaces internas
 
@@ -70,6 +75,7 @@ interface HybridEnc {
 		kdf: {
 			alg: "HKDF";
 			hash: "SHA-256";
+			salt: "";
 		};
 	};
 	symmetric: {
@@ -79,61 +85,70 @@ interface HybridEnc {
 }
 
 /**
- * Datos que actúan como AAD en el cifrado XChaCha20-Poly1305.
+ * Datos que se usan como AAD en el cifrado principal XChaCha20-Poly1305.
  *
- * Nota crítica: `AAD` excluye `recipients` y `nonce` a propósito.
- * Solo los campos estables del archivo y la llave efímera compartida
- * forman el AAD, mientras que `recipients` y `nonce` se añaden a
- * `EncryptionMetadata` pero no afectan la autenticación del ciphertext.
+ * Contiene toda la información de contexto del archivo y del propietario.
+ * `recipients` y `nonce` se añaden en `EncryptionMetadata` pero no forman
+ * parte del AAD, de modo que el propietario puede gestionar la lista de
+ * destinatarios sin invalidar el tag del ciphertext.
  *
  * @interface AAD
  * @internal
  */
 interface AAD {
+	/** Tipo MIME del archivo. */
 	file_type: string;
+	/** Nombre del archivo. */
 	filename: string;
 	/** Timestamp ISO-8601 del momento del cifrado. */
 	timestamp: string;
 	/**
-	 * SHA-256 de la llave pública Ed25519 del propietario en Base64.
-	 * Vincula el contenedor con su creador de forma verificable.
+	 * SHA-256 de la llave pública Ed25519 del propietario, en Base64.
+	 * Vincula el ciphertext con la identidad del creador de forma verificable.
 	 */
 	owner_fingerprint: string;
-	/** Llave pública efímera X25519 en Base64. Usada por los destinatarios para ECDH. */
-	container_key: string;
+	/**
+	 * Llave simétrica envuelta exclusivamente para el propietario.
+	 * Usa un par efímero X25519 independiente al de los destinatarios,
+	 * garantizando que el propietario siempre pueda descifrar su propio archivo.
+	 */
+	ownerWrap: {
+		/** Nonce de 192 bits del XChaCha20 de wrap, en Base64. */
+		wrapNonce: string;
+		/** Llave simétrica envuelta con XChaCha20, en Base64. */
+		wrappedKey: string;
+		/** Llave pública efímera X25519 para que el propietario haga ECDH, en Base64. */
+		ephimeral_pub: string;
+	};
 	encryption: SymmetricSpecs;
 	keyWrapping: HybridEnc;
 }
+
 
 // Interfaces exportadas
 
 /**
  * Datos de la llave simétrica envuelta para un destinatario específico.
  *
- * Para descifrar, el receptor realiza:
- * ```
- * recipientXPriv = toMontgomerySecret(recipient_privateKey)
- * sharedSecret   = X25519(recipientXPriv, container_key_bytes)
- * derivedKey     = HKDF-SHA256(sharedSecret, 32)
- * symmetric_key  = XChaCha20(derivedKey, wrapNonce, wrappedKey)
- * ```
- *
  * @interface KeyWrap
  */
-export interface KeyWrap {
-	/** Nombre de usuario del destinatario. */
+interface KeyWrap {
+	/** Nombre del destinatario, usado como identificador durante el descifrado. */
 	username: string;
-	/** Nonce de 192 bits usado para envolver la llave, en Base64. */
+	/** Nonce de 192 bits del XChaCha20 de wrap, en Base64. */
 	wrapNonce: string;
 	/** Llave simétrica envuelta con XChaCha20, en Base64. */
 	wrappedKey: string;
+	/** Llave pública efímera X25519 del destinatario para ECDH, en Base64. */
+	ephimeral_pub: string;
 }
 
 /**
  * Metadatos completos del contenedor cifrado, incluyendo lista de destinatarios.
  *
  * Extiende {@link AAD} añadiendo los campos que varían por cifrado:
- * la lista de destinatarios y el nonce del ciphertext principal.
+ * La lista `recipients` puede ser modificada por el propietario sin
+ * invalidar el tag del ciphertext, siempre que se re-firme el contenedor.
  *
  * @interface EncryptionMetadata
  */
@@ -145,18 +160,19 @@ export interface EncryptionMetadata extends AAD {
 }
 
 /**
- * Contenedor firmado que incluye ciphertext, metadatos y firma Ed25519.
+ * Contenedor cifrado y firmado.
  *
  * La firma cubre: `{ metaData, cipherText_w_tag, signature_algo, signer_id }`,
- * lo que vincula criptográficamente el contenido, los metadatos, el algoritmo
- * y la identidad del firmante. Cualquier modificación a estos campos invalida la firma.
+ * vinculando criptográficamente el ciphertext, los metadatos (con `ownerWrap` y
+ * la lista de `recipients`), el algoritmo de firma y la identidad del creador.
  *
  * @interface SignContainer
  */
 export interface SignContainer {
+	/** Metadatos completos del cifrado. */
 	metaData: EncryptionMetadata;
 	/**
-	 * Ciphertext + tag Poly1305 en Base64.
+	 * Ciphertext + tag Poly1305 concatenados en Base64.
 	 * Los últimos 16 bytes son el authentication tag.
 	 */
 	cipherText_w_tag: string;
@@ -169,7 +185,22 @@ export interface SignContainer {
 }
 
 /**
- * Datos de entrada para cifrar un archivo en D5.
+ * Datos de un usuario destinatario para operaciones de cifrado.
+ * @interface UserInfo
+ * @internal
+ */
+interface UserInfo {
+	username: string;
+	/** Llave pública Ed25519 raw (32 bytes). */
+	publicKey: Uint8Array;
+}
+
+/**
+ * Datos de entrada para cifrar un archivo.
+ *
+ * A diferencia de D3, ya no es necesario
+ * pasar la información del propietario como mínimo en el atributo de destinatario.
+ *
  * @interface CipherObject
  */
 export interface CipherObject {
@@ -180,7 +211,7 @@ export interface CipherObject {
 	/** Nombre del archivo. */
 	filename: string;
 	/** Lista de destinatarios (nombre + llave pública Ed25519 raw). */
-	recipients: Array<{ username: string; publicKey: Uint8Array }>;
+	recipients ?: UserInfo[];
 }
 
 // Utilidades
@@ -203,6 +234,55 @@ export function bytesToB64(bytes: Uint8Array): string {
 	return btoa(String.fromCharCode(...bytes));
 }
 
+
+const SignContainerSchema = z.object({
+	metaData: z.object({
+		file_type: z.string(),
+		filename: z.string(),
+		timestamp: z.string(),
+		owner_fingerprint: z.string(),
+		ownerWrap: z.object({
+			wrapNonce: z.string(),
+			wrappedKey: z.string(),
+			ephimeral_pub: z.string(),
+		}),
+		encryption: z.object({
+			cipher: z.string(),
+			key_size_bits: z.number(),
+			nonce_size_bits: z.number(),
+			tag_size_bits: z.number(),
+		}),
+		keyWrapping: z.object({
+			scheme: z.string(),
+			asymmetric: z.object({
+				curve: z.string(),
+				kdf: z.object({
+					alg: z.string(),
+					hash: z.string(),
+					salt: z.string(),
+				}),
+			}),
+			symmetric: z.object({
+				cipher: z.string(),
+				key_size_bits: z.number(),
+			}),
+		}),
+		recipients: z.array(
+			z.object({
+				username: z.string(),
+				wrapNonce: z.string(),
+				wrappedKey: z.string(),
+				ephimeral_pub: z.string(),
+			}),
+		),
+		nonce: z.string(),
+	}),
+	cipherText_w_tag: z.string(),
+	signature_algo: z.string(),
+	signer_id: z.string(),
+	signature: z.string(),
+});
+
 // Clase principal
 
 /**
@@ -217,15 +297,12 @@ export function bytesToB64(bytes: Uint8Array): string {
  */
 export class SignatureCryptoModule {
 	/**
+	 * Se descartan las llaves (RSA-OAEP) de D3 y se utilizan llaves de firma Ed25519.
+	 *
 	 * Cifra un archivo para múltiples destinatarios usando ECIES-style.
-	 *
-	 * A diferencia de D3 (RSA-OAEP), aquí se usa un **par efímero X25519** compartido
-	 * para todos los destinatarios. Cada destinatario recibe su propia `wrappedKey`
-	 * derivada del ECDH entre la llave efímera y su llave pública convertida a Montgomery.
-	 *
-	 * **Importante:** Este método es llamado internamente por {@link create_container}.
-	 * El `owner_fingerprint` (SHA-256 de la llave pública del propietario) se incluye
-	 * en el AAD, vinculando el ciphertext con la identidad del creador antes de firmar.
+	 * 1. Las llaves de firma Ed25519 se convierten a llaves de tipo X25519 para ECDH.
+	 * 2. Se generan llaves efímeras por destinatario.
+	 * 3. Se deriva un secreto (utilizando la llave efímera privada y la llave pública del destinatario) y se * usa para envolver la llave simétrica con XChaCha20.
 	 *
 	 * @param cipherObject - Archivo y destinatarios a cifrar.
 	 * @param owner_fingerprint - SHA-256(owner_publicKey) en Base64, incluido en AAD.
@@ -235,39 +312,47 @@ export class SignatureCryptoModule {
 	 */
 	encrypt_file(
 		cipherObject: CipherObject,
-		owner_fingerprint: string,
+		owner_publicKey: Uint8Array,
 	): { cipherText_w_tag: Uint8Array; metaData: EncryptionMetadata } {
 		const symmetric_key = randomBytes(32);
 		const nonce = randomBytes(24);
 
+		// ownerWrap: par efímero independiente para el propietario
 		const ephimeralKeyPair = x25519.keygen();
 		const ephimeralPriv = ephimeralKeyPair.secretKey;
 		const ephimeralPub = ephimeralKeyPair.publicKey;
+		const ownerXPub = ed25519.utils.toMontgomery(owner_publicKey);
+		const sharedSecret = x25519.getSharedSecret(ephimeralPriv, ownerXPub);
+		const derivedKey = hkdf(sha256, sharedSecret, undefined, undefined, 32);
+		const wrapNonce = randomBytes(24);
 
+		const ownerWrap = {
+			wrapNonce: bytesToB64(wrapNonce),
+			wrappedKey: bytesToB64(
+				xchacha20(derivedKey, wrapNonce, symmetric_key),
+			),
+			ephimeral_pub: bytesToB64(ephimeralPub),
+		};
+
+		// recipientsKeyWraps: par efímero independiente por destinatario
 		const recipientsKeyWraps: KeyWrap[] = [];
-
-		for (const recipient of cipherObject.recipients) {
+		for (const recipient of cipherObject.recipients ?? []) {
+			const ephiKeyPair = x25519.keygen();
+			const ephiPriv = ephiKeyPair.secretKey;
+			const ephiPub = ephiKeyPair.publicKey;
 			const recipientXPub = ed25519.utils.toMontgomery(
 				recipient.publicKey,
 			);
-			const sharedSecret = x25519.getSharedSecret(
-				ephimeralPriv,
-				recipientXPub,
-			);
-			const derivedKey = hkdf(
-				sha256,
-				sharedSecret,
-				undefined,
-				undefined,
-				32,
-			);
-			const wrapNonce = randomBytes(24);
+			const secret = x25519.getSharedSecret(ephiPriv, recipientXPub);
+			const dKey = hkdf(sha256, secret, undefined, undefined, 32);
+			const wrapnonce = randomBytes(24);
 			recipientsKeyWraps.push({
 				username: recipient.username,
-				wrapNonce: bytesToB64(wrapNonce),
+				wrapNonce: bytesToB64(wrapnonce),
 				wrappedKey: bytesToB64(
-					xchacha20(derivedKey, wrapNonce, symmetric_key),
+					xchacha20(dKey, wrapnonce, symmetric_key),
 				),
+				ephimeral_pub: bytesToB64(ephiPub),
 			});
 		}
 
@@ -275,7 +360,8 @@ export class SignatureCryptoModule {
 			file_type: cipherObject.file_type,
 			filename: cipherObject.filename,
 			timestamp: new Date().toISOString(),
-			owner_fingerprint,
+			owner_fingerprint: bytesToB64(sha256(owner_publicKey)),
+			ownerWrap,
 			encryption: {
 				cipher: "XChacha20-Poly1305",
 				key_size_bits: 256,
@@ -286,17 +372,15 @@ export class SignatureCryptoModule {
 				scheme: "ECIES-STYLE",
 				asymmetric: {
 					curve: "X25519",
-					kdf: { alg: "HKDF", hash: "SHA-256" },
+					kdf: { alg: "HKDF", hash: "SHA-256", salt: "" },
 				},
 				symmetric: { cipher: "XChacha20", key_size_bits: 256 },
 			},
-			container_key: bytesToB64(ephimeralPub),
 		};
 
 		const aad = new TextEncoder().encode(stringify(specs));
 		const chacha = xchacha20poly1305(symmetric_key, nonce, aad);
 		const cipherText_w_tag = chacha.encrypt(cipherObject.data);
-
 		const metaData: EncryptionMetadata = {
 			...specs,
 			recipients: recipientsKeyWraps,
@@ -305,11 +389,12 @@ export class SignatureCryptoModule {
 		return { cipherText_w_tag, metaData };
 	}
 
+
 	/**
 	 * Descifra un contenedor firmado para un destinatario específico.
 	 *
 	 * **Flujo completo:**
-	 * 1. Valida la firma Ed25519 del contenedor con {@link validate_container}.
+	 * 1. Valida la firma Ed25519 del contenedor con {@link validate_container_signature}.
 	 * 2. Busca la entrada del destinatario en `metaData.recipients`.
 	 * 3. Convierte la llave privada Ed25519 a X25519 (`toMontgomerySecret`).
 	 * 4. ECDH con la llave efímera pública → HKDF → llave de unwrap.
@@ -317,8 +402,8 @@ export class SignatureCryptoModule {
 	 * 6. XChaCha20-Poly1305 decrypt → plaintext.
 	 *
 	 * @param container - Contenedor firmado producido por {@link create_container}.
-	 * @param recipient_userName - Nombre del destinatario que quiere descifrar.
-	 * @param recipient_privateKey - Llave privada Ed25519 raw (32 bytes) del destinatario.
+	 * @param petitioner_userName - Nombre del destinatario que quiere descifrar.
+	 * @param petitioner_privateKey - Llave privada Ed25519 raw (32 bytes) del destinatario.
 	 * @param owner_publicKey - Llave pública Ed25519 raw del firmante, para verificar firma.
 	 * @returns Plaintext del archivo en bytes.
 	 *
@@ -328,35 +413,42 @@ export class SignatureCryptoModule {
 	 */
 	decrypt_container(
 		container: SignContainer,
-		recipient_userName: string,
-		recipient_privateKey: Uint8Array,
+		petitioner_userName: string,
+		petitioner_privateKey: Uint8Array,
 		owner_publicKey: Uint8Array,
 	): Uint8Array {
-		if (!this.validate_container(container, owner_publicKey))
+		if (!this.validate_container_signature(container, owner_publicKey))
 			throw new Error("Firma no valida");
 
 		const metaData = container.metaData;
-		const cipherText_w_tag = b64ToBytes(container.cipherText_w_tag);
 
-		const recipientKeyWrap = metaData.recipients.find(
-			(r) => r.username === recipient_userName,
-		);
-		if (!recipientKeyWrap)
+		let petitioner_KeyWrap: KeyWrap | typeof metaData.ownerWrap | undefined;
+		if (petitioner_userName === container.signer_id) {
+			petitioner_KeyWrap = metaData.ownerWrap;
+		} else {
+			petitioner_KeyWrap = metaData.recipients.find(
+				(r) => r.username === petitioner_userName,
+			);
+		}
+
+		if (!petitioner_KeyWrap)
 			throw new Error("Recipient not found in metadata");
 
-		const recipientXPriv =
-			ed25519.utils.toMontgomerySecret(recipient_privateKey);
-		const ephimeralPub = b64ToBytes(metaData.container_key);
+		const petitionerXPriv =
+			ed25519.utils.toMontgomerySecret(petitioner_privateKey);
+		const ephimeralPub = b64ToBytes(petitioner_KeyWrap.ephimeral_pub);
 		const sharedSecret = x25519.getSharedSecret(
-			recipientXPriv,
+			petitionerXPriv,
 			ephimeralPub,
 		);
 		const derivedKey = hkdf(sha256, sharedSecret, undefined, undefined, 32);
 		const symmetric_key = xchacha20(
 			derivedKey,
-			b64ToBytes(recipientKeyWrap.wrapNonce),
-			b64ToBytes(recipientKeyWrap.wrappedKey),
+			b64ToBytes(petitioner_KeyWrap.wrapNonce),
+			b64ToBytes(petitioner_KeyWrap.wrappedKey),
 		);
+
+		const cipherText_w_tag = b64ToBytes(container.cipherText_w_tag);
 		const nonce = b64ToBytes(metaData.nonce);
 
 		const payload: AAD = {
@@ -364,9 +456,9 @@ export class SignatureCryptoModule {
 			filename: metaData.filename,
 			timestamp: metaData.timestamp,
 			owner_fingerprint: metaData.owner_fingerprint,
+			ownerWrap: metaData.ownerWrap,
 			encryption: metaData.encryption,
 			keyWrapping: metaData.keyWrapping,
-			container_key: metaData.container_key,
 		};
 
 		const aad = new TextEncoder().encode(stringify(payload));
@@ -375,18 +467,11 @@ export class SignatureCryptoModule {
 	}
 
 	/**
-	 * Crea y firma un contenedor cifrado completo.
-	 *
-	 * Combina {@link encrypt_file} y la firma Ed25519 en un único paso.
-	 * El `owner_fingerprint` (SHA-256 de la llave pública del propietario)
-	 * se incluye en el AAD del ciphertext **y** en el payload firmado,
-	 * vinculando criptográficamente la identidad del creador con el contenido.
-	 *
-	 * **Payload que se firma (canonicalizado con `fast-json-stable-stringify`):**
-	 * ```ts
-	 * { metaData, cipherText_w_tag, signature_algo: "Ed25519", signer_id }
-	 * ```
-	 *
+	 *	Cifra y firma el contenedor en un solo paso.
+
+	 * Al añadir el 'owner_fingerprint' (SHA-256 de la llave pública del propietario) en el AAD, se refuerza el vínculo entre la identidad del creador y el contenido cifrado.
+
+
 	 * @param owner_privateKey - Llave privada Ed25519 del propietario (32 bytes).
 	 * @param owner_publicKey - Llave pública Ed25519 del propietario (32 bytes).
 	 * @param owner_username - Nombre de usuario del propietario, almacenado en `signer_id`.
@@ -412,7 +497,7 @@ export class SignatureCryptoModule {
 	): SignContainer {
 		const { cipherText_w_tag, metaData } = this.encrypt_file(
 			cipherObject,
-			bytesToB64(sha256(owner_publicKey)),
+			owner_publicKey,
 		);
 		const container = {
 			metaData,
@@ -432,15 +517,164 @@ export class SignatureCryptoModule {
 	}
 
 	/**
-	 * Método pendiente de implementación para verificación de estructura del contenedor.
+   * Agrega nuevos destinatarios a un contenedor criptográfico firmado.
+   * * Esta función valida la firma actual del contenedor, desencripta la llave simétrica
+   * utilizando las credenciales del propietario (convirtiendo llaves Ed25519 a X25519),
+   * y luego envuelve (encripta) esta llave simétrica para cada uno de los nuevos
+   * destinatarios utilizando sus respectivas llaves públicas. Finalmente, actualiza
+   * la lista de destinatarios y vuelve a firmar el contenedor modificado.
+   *
+   * @param container - El contenedor firmado original (`SignContainer`) que se desea actualizar.
+   * @param owner_publicKey - La llave pública del propietario (Ed25519) en formato `Uint8Array`, utilizada para validar la firma inicial del contenedor.
+   * @param owner_privateKey - La llave privada del propietario (Ed25519) en formato `Uint8Array`, utilizada para desencriptar la llave simétrica y firmar el contenedor resultante.
+   * @param recipientsInfo - Un arreglo con la información de los usuarios (`UserInfo[]`) que se añadirán al contenedor.
+   * @returns Un nuevo objeto `SignContainer` (clonado del original) que incluye a los nuevos destinatarios y una firma actualizada.
+   * @throws {Error} Lanza un error con el mensaje "Firma no válida" si el contenedor original fue alterado o la llave pública no corresponde.
+   * @throws {Error} Lanza un error con el mensaje "No se puedieron actualizar las llaves" si falla alguna operación criptográfica (ej. derivación de llaves, encriptación XChaCha20 o la nueva firma).
+   */
+	add_recipients_to_container(
+		container: SignContainer,
+		owner_publicKey: Uint8Array,
+		owner_privateKey: Uint8Array,
+		recipientsInfo: UserInfo[],
+	): SignContainer {
+
+		if (!this.validate_container_signature(container, owner_publicKey))
+			throw new Error("Firma no válida");
+
+		const updatedContainer: SignContainer = structuredClone(container);
+
+		try {
+			const xPriv = ed25519.utils.toMontgomerySecret(owner_privateKey);
+			const ephimeralPub = b64ToBytes(
+				container.metaData.ownerWrap.ephimeral_pub,
+			);
+			const sharedSecret = x25519.getSharedSecret(xPriv, ephimeralPub);
+			const wrapNonce = b64ToBytes(
+				container.metaData.ownerWrap.wrapNonce,
+			);
+			const derivedKey = hkdf(
+				sha256,
+				sharedSecret,
+				undefined,
+				undefined,
+				32,
+			);
+			const symmetric_key = xchacha20(
+				derivedKey,
+				wrapNonce,
+				b64ToBytes(container.metaData.ownerWrap.wrappedKey),
+			);
+
+			const usersInList = new Set<string>(
+				updatedContainer.metaData.recipients.map((r) => r.username),
+			);
+
+			for (const newRecipient of recipientsInfo) {
+				if (!usersInList.has(newRecipient.username)) {
+					const ephiKeyPair = x25519.keygen();
+					const recipientXPub = ed25519.utils.toMontgomery(
+						newRecipient.publicKey,
+					);
+					const secret = x25519.getSharedSecret(
+						ephiKeyPair.secretKey,
+						recipientXPub,
+					);
+					const dKey = hkdf(sha256, secret, undefined, undefined, 32);
+					const newWrapNonce = randomBytes(24);
+					updatedContainer.metaData.recipients.push({
+						username: newRecipient.username,
+						wrapNonce: bytesToB64(newWrapNonce),
+						wrappedKey: bytesToB64(
+							xchacha20(dKey, newWrapNonce, symmetric_key),
+						),
+						ephimeral_pub: bytesToB64(ephiKeyPair.publicKey),
+					});
+				}
+			}
+
+			const { signature, ...payload } = updatedContainer;
+			const payloadDump = new TextEncoder().encode(stringify(payload));
+			updatedContainer.signature = bytesToB64(
+				ed25519.sign(payloadDump, owner_privateKey),
+			);
+		} catch (err) {
+			throw new Error("No se puedieron actualizar las llaves");
+		}
+
+		return updatedContainer;
+	}
+
+	/**
+   * Elimina destinatarios específicos de un contenedor criptográfico firmado.
+   * * Esta función primero valida la firma del contenedor original utilizando la llave
+   * pública del propietario. Luego, filtra la lista de destinatarios actual para remover
+   * a los usuarios cuyos nombres coincidan con los indicados. Finalmente, genera una
+   * nueva firma para el contenedor modificado utilizando la llave privada del propietario,
+   * garantizando así su integridad.
+   *
+   * @param container - El contenedor firmado original (`SignContainer`) del cual se eliminarán los destinatarios.
+   * @param owner_publicKey - La llave pública del propietario en formato `Uint8Array`, utilizada para validar la firma inicial del contenedor.
+   * @param owner_privateKey - La llave privada del propietario en formato `Uint8Array`, utilizada para generar la nueva firma del contenedor actualizado.
+   * @param usernamesToRemove - Un arreglo de cadenas de texto (`string[]`) con los nombres de los usuarios que deben ser retirados del contenedor.
+   * @returns Un nuevo objeto `SignContainer` (clonado del original) con la lista de destinatarios actualizada y una firma válida.
+   * @throws {Error} Lanza un error con el mensaje "Firma no válida" si el contenedor original fue alterado o si la llave pública proporcionada no corresponde.
+   * @throws {Error} Lanza un error con el mensaje "No se pudo remover a los usuarios" si ocurre algún fallo interno durante la eliminación o el proceso de re-firmado.
+  */
+	remove_recipients_from_container(
+		container: SignContainer,
+		owner_publicKey: Uint8Array,
+		owner_privateKey: Uint8Array,
+		usernamesToRemove: string[],
+	): SignContainer {
+
+		if (!this.validate_container_signature(container, owner_publicKey))
+			throw new Error("Firma no válida");
+
+		const updatedContainer: SignContainer = structuredClone(container);
+
+		try {
+
+			const usersToRemove = new Set<string>(usernamesToRemove);
+
+			updatedContainer.metaData.recipients =
+				updatedContainer.metaData.recipients.filter(
+					(r) => !usersToRemove.has(r.username),
+				);
+
+			const { signature, ...payload } = updatedContainer;
+			const payloadDump = new TextEncoder().encode(stringify(payload));
+			updatedContainer.signature = bytesToB64(
+				ed25519.sign(payloadDump, owner_privateKey),
+			);
+		} catch (err) {
+			throw new Error("No se pudo remover a los usuarios");
+		}
+
+		return updatedContainer;
+	}
+
+	/**
+	 * Valida la estructura de un objeto candidato a `SignContainer` usando Zod.
 	 *
-	 * @param container - Objeto a verificar.
-	 * @todo Implementar validación de esquema. Ver {@link validate_container} para
-	 *   la verificación criptográfica de la firma.
-	 * @deprecated No implementado en D5; en D6 se usa Zod para validación de esquema.
+	 * Verifica que todos los campos requeridos existan y tengan el tipo correcto,
+	 * **sin** verificar la firma criptográfica. Útil para validar JSON recibido
+	 * de la red antes de intentar operaciones criptográficas costosas.
+	 *
+	 * @param container - Objeto a validar (puede ser un JSON parseado de origen externo).
+	 * @returns `true` si el objeto cumple el esquema `SignContainerSchema`; `false` si no.
+	 *
+	 * @example
+	 * ```ts
+	 * const parsed = JSON.parse(receivedJson);
+	 * if (!module.verify_container_structure(parsed)) {
+	 *   throw new Error("Contenedor malformado");
+	 * }
+	 * // Ahora es seguro intentar validate_container_signature(parsed, pubKey)
+	 * ```
 	 */
-	verify_container(_container: object): void {
-		// Pendiente de implementación
+	verify_container_structure(container: object): boolean {
+		return SignContainerSchema.safeParse(container).success;
 	}
 
 	/**
@@ -463,7 +697,7 @@ export class SignatureCryptoModule {
 	 * Un retorno `false` implica que el contenedor fue modificado o que la llave pública
 	 * no corresponde al creador. En ambos casos el descifrado no procede.
 	 */
-	validate_container(
+	validate_container_signature(
 		container: SignContainer,
 		owner_publicKey: Uint8Array,
 	): boolean {

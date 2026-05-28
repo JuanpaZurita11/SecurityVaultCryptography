@@ -1,1 +1,1 @@
-export {SymmetricEncryption, bytesToB64, b64ToBytes} from './d1.js';
+export {SymmetricEncryption, bytesToB64, b64ToBytes} from './d2.js';
