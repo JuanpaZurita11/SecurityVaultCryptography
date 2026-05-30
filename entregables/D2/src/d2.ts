@@ -20,6 +20,9 @@
 import { randomBytes } from "@noble/ciphers/utils.js";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import stringify from "fast-json-stable-stringify";
+import {z} from "zod";
+
+
 
 // Interfaces
 
@@ -93,6 +96,25 @@ export interface Container {
 	cipherText_w_tag: string;
 }
 
+
+const ContainerSchema = z.object({
+  metaData: z.object({
+    filename: z.string(),
+    file_type: z.string(),
+    timestamp: z.string(),
+    encryption: z.string(),
+    parameters: z.object({
+      cipher: z.string(),
+      key_size_bits: z.number(),
+      nonce_size_bytes: z.number(),
+      tag_size_bytes: z.number(),
+    }),
+    nonce: z.string(),
+  }),
+  cipherText_w_tag: z.string(),
+});
+
+
 // Utilidades de codificación
 
 /**
@@ -148,19 +170,6 @@ export function bytesToB64(bytes: Uint8Array): string {
  * @class SymmetricEncryption
  */
 export class SymmetricEncryption {
-	/**
-	 * Genera una llave simétrica aleatoria de 256 bits para uso externo.
-	 *
-	 * @returns Llave simétrica de 32 bytes generada con CSPRNG.
-	 *
-	 * @remarks
-	 * Este método no es necesario para usar {@link encrypt_file}, que genera
-	 * su propia llave internamente. Está disponible para casos donde el llamador
-	 * necesita gestionar la llave de forma explícita antes de cifrar.
-	 */
-	generate_symmetric_key(): Uint8Array {
-		return randomBytes(32);
-	}
 
 	/**
 	 * Cifra un archivo usando XChaCha20-Poly1305 con metadatos como AAD.
@@ -249,5 +258,9 @@ export class SymmetricEncryption {
 		const chacha = xchacha20poly1305(symmetricKey, nonce, aad);
 		const data_ = b64ToBytes(container.cipherText_w_tag);
 		return chacha.decrypt(data_);
+	}
+
+	verify_container_structure(container: object): boolean {
+		return ContainerSchema.safeParse(container).success;
 	}
 }
