@@ -52,20 +52,39 @@ export function PageHeader({
 }) {
   return (
     <div style={{ marginBottom: '3rem', paddingBottom: '2rem', borderBottom: '1px solid var(--border)' }}>
-      <span style={{
-        display: 'inline-block',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '0.68rem',
-        fontWeight: 600,
-        background: 'var(--tag-bg)',
-        color: 'var(--tag-text)',
-        padding: '3px 10px',
-        borderRadius: '4px',
-        marginBottom: '0.75rem',
-        letterSpacing: '0.04em',
-      }}>
-        {badge}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: '0.68rem',
+          fontWeight: 600,
+          background: 'var(--tag-bg)',
+          color: 'var(--tag-text)',
+          padding: '3px 10px',
+          borderRadius: '4px',
+          letterSpacing: '0.04em',
+        }}>
+          {badge}
+        </span>
+        <a
+          href="#demo"
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.72rem',
+            fontWeight: 500,
+            color: 'var(--accent)',
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            padding: '4px 12px',
+            border: '1px solid var(--accent)',
+            borderRadius: '6px',
+            background: 'var(--accent-dim)',
+          }}
+        >
+          ↓ Jump to demo
+        </a>
+      </div>
       <h1 style={{
         fontSize: '1.9rem',
         fontWeight: 600,

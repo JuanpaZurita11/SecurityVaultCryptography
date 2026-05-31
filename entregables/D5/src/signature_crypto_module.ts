@@ -48,6 +48,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { xchacha20poly1305, xchacha20 } from "@noble/ciphers/chacha.js";
 import stringify from "fast-json-stable-stringify";
 import { z } from "zod";
+import { th } from "zod/locales";
 
 // Interfaces internas
 
@@ -417,8 +418,10 @@ export class SignatureCryptoModule {
 		petitioner_privateKey: Uint8Array,
 		owner_publicKey: Uint8Array,
 	): Uint8Array {
+		if(!this.verify_container_structure(container))
+			throw new Error("Invalid container structure");
 		if (!this.validate_container_signature(container, owner_publicKey))
-			throw new Error("Firma no valida");
+			throw new Error("Invalid signature");
 
 		const metaData = container.metaData;
 

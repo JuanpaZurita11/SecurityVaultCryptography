@@ -9,7 +9,9 @@
   ```json
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
-    "fast-json-stable-stringify": "^2.1.0"
+    "fast-json-stable-stringify": "^2.1.0",
+    "zod": "^4.4.3"
+
   }
   ```
 2. **Execution environment**: Web page FrontEnd

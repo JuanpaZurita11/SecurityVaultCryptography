@@ -803,8 +803,11 @@ export class CryptoModule {
 		password: string,
 		owner_publicKey: Uint8Array,
 	): Uint8Array {
+		if (!this.verify_container_structure(container))
+			throw new Error("Invalid container structure");
+
 		if (!this.validate_container_signature(container, owner_publicKey))
-			throw new Error("Firma no valida");
+			throw new Error("Invalid signature");
 
 		const metaData = container.metaData;
 

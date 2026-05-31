@@ -1,2 +1,1 @@
-export {KeyManager } from './key_manager.js';
-export {SignatureCryptoModule, bytesToB64, b64ToBytes} from './d3.js';
+export {HybridEncryption, bytesToB64, b64ToBytes, KeyManager} from './d3.js';
