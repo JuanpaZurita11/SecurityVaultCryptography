@@ -52,20 +52,39 @@ export function PageHeader({
 }) {
   return (
     <div style={{ marginBottom: '3rem', paddingBottom: '2rem', borderBottom: '1px solid var(--border)' }}>
-      <span style={{
-        display: 'inline-block',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '0.68rem',
-        fontWeight: 600,
-        background: 'var(--tag-bg)',
-        color: 'var(--tag-text)',
-        padding: '3px 10px',
-        borderRadius: '4px',
-        marginBottom: '0.75rem',
-        letterSpacing: '0.04em',
-      }}>
-        {badge}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: '0.68rem',
+          fontWeight: 600,
+          background: 'var(--tag-bg)',
+          color: 'var(--tag-text)',
+          padding: '3px 10px',
+          borderRadius: '4px',
+          letterSpacing: '0.04em',
+        }}>
+          {badge}
+        </span>
+        <a
+          href="#demo"
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.72rem',
+            fontWeight: 500,
+            color: 'var(--accent)',
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            padding: '4px 12px',
+            border: '1px solid var(--accent)',
+            borderRadius: '6px',
+            background: 'var(--accent-dim)',
+          }}
+        >
+          ↓ Jump to demo
+        </a>
+      </div>
       <h1 style={{
         fontSize: '1.9rem',
         fontWeight: 600,
@@ -357,3 +376,147 @@ export function MethodSignature({ signature }: { signature: string }) {
     </div>
   )
 }
+
+/* ── JsonSchema ──────────────────────────────────────── */
+type JsonSchemaTokenKind = 'key' | 'string' | 'number' | 'type' | 'literal' | 'comment' | 'punct' | 'plain'
+
+const TOKEN_COLORS: Record<JsonSchemaTokenKind, string> = {
+  key:     '#93c5fd',
+  string:  '#86efac',
+  number:  '#fde68a',
+  type:    '#c4b5fd',
+  literal: '#f9a8d4',
+  comment: '#6b7280',
+  punct:   '#94a3b8',
+  plain:   '#e2e8f0',
+}
+
+const TYPE_KEYWORDS = new Set(['string', 'number', 'boolean', 'Uint8Array', 'object', 'null', 'undefined'])
+
+function tokenizeLine(line: string): { kind: JsonSchemaTokenKind; value: string }[] {
+  const tokens: { kind: JsonSchemaTokenKind; value: string }[] = []
+
+  const indentMatch = line.match(/^(\s*)/)
+  const indent = indentMatch ? indentMatch[1] : ''
+  let rest = line.slice(indent.length)
+  if (indent) tokens.push({ kind: 'plain', value: indent })
+
+  if (rest.startsWith('//')) {
+    tokens.push({ kind: 'comment', value: rest })
+    return tokens
+  }
+
+  if (/^[}\]],?$/.test(rest)) {
+    tokens.push({ kind: 'punct', value: rest })
+    return tokens
+  }
+
+  const keyMatch = rest.match(/^("([^"]+)")\s*:\s*/)
+  if (keyMatch) {
+    tokens.push({ kind: 'key', value: keyMatch[1] })
+    tokens.push({ kind: 'punct', value: ': ' })
+    rest = rest.slice(keyMatch[0].length)
+  }
+
+  let inlineComment = ''
+  const commentIdx = rest.indexOf('//')
+  if (commentIdx !== -1) {
+    inlineComment = rest.slice(commentIdx)
+    rest = rest.slice(0, commentIdx).trimEnd()
+  }
+
+  if (rest === '{' || rest === '[' || rest === '{,' || rest === '[,') {
+    tokens.push({ kind: 'punct', value: rest })
+  } else if (/^"[^"]*"/.test(rest)) {
+    const strMatch = rest.match(/^("([^"]*)")(,?)$/)
+    if (strMatch) {
+      const inner = strMatch[2]
+      const comma = strMatch[3]
+      tokens.push({ kind: TYPE_KEYWORDS.has(inner) ? 'type' : 'literal', value: strMatch[1] })
+      if (comma) tokens.push({ kind: 'punct', value: ',' })
+    } else {
+      tokens.push({ kind: 'string', value: rest })
+    }
+  } else if (/^-?\d/.test(rest)) {
+    const numMatch = rest.match(/^(-?\d[\d.]*)(,?)$/)
+    if (numMatch) {
+      tokens.push({ kind: 'number', value: numMatch[1] })
+      if (numMatch[2]) tokens.push({ kind: 'punct', value: ',' })
+    } else {
+      tokens.push({ kind: 'plain', value: rest })
+    }
+  } else if (TYPE_KEYWORDS.has(rest.replace(/,$/, ''))) {
+    const comma = rest.endsWith(',')
+    tokens.push({ kind: 'type', value: rest.replace(/,$/, '') })
+    if (comma) tokens.push({ kind: 'punct', value: ',' })
+  } else if (rest) {
+    tokens.push({ kind: 'plain', value: rest })
+  }
+
+  if (inlineComment) {
+    tokens.push({ kind: 'plain', value: '  ' })
+    tokens.push({ kind: 'comment', value: inlineComment })
+  }
+
+  return tokens
+}
+
+export function JsonSchema({ schema, title = 'JSON Schema' }: { schema: string; title?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    navigator.clipboard.writeText(schema).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const lines = schema.split('\n')
+
+  return (
+    <div style={{ margin: '1.25rem 0', borderRadius: '8px', border: '1px solid var(--border)', overflow: 'hidden', fontSize: '0.82rem' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: '#22252f', padding: '0.45rem 1rem', borderBottom: '1px solid #333',
+      }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          {title}
+        </span>
+        <button onClick={copy} style={{
+          fontFamily: 'var(--font-mono)', fontSize: '0.65rem', background: 'none',
+          border: `1px solid ${copied ? '#4ade80' : '#444'}`, borderRadius: '4px',
+          padding: '2px 8px', cursor: 'pointer',
+          color: copied ? '#4ade80' : '#6b7280', transition: 'all 0.2s',
+        }}>
+          {copied ? '✓ copied' : 'copy'}
+        </button>
+      </div>
+      <pre style={{
+        background: '#0d1117', margin: 0, padding: '1.1rem 1.4rem',
+        overflowX: 'auto', lineHeight: 1.75,
+        fontFamily: 'var(--font-mono)', fontSize: '0.82rem',
+      }}>
+        {lines.map((line, i) => (
+          <div key={i}>
+            {tokenizeLine(line).map((tok, j) => (
+              <span key={j} style={{ color: TOKEN_COLORS[tok.kind] }}>{tok.value}</span>
+            ))}
+          </div>
+        ))}
+      </pre>
+      <div style={{
+        background: '#161922', borderTop: '1px solid #2a2d3a',
+        padding: '0.4rem 1rem', display: 'flex', gap: '1.25rem', flexWrap: 'wrap',
+      }}>
+        {(['key', 'type', 'literal', 'number', 'comment'] as JsonSchemaTokenKind[]).map((kind, i) => (
+          <span key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: TOKEN_COLORS[kind], display: 'inline-block' }} />
+            <span style={{ color: '#6b7280' }}>{({ key: 'Field name', type: 'Type', literal: 'Fixed value', number: 'Number', comment: 'Comment', string: 'String', punct: 'Punctuation', plain: 'Plain' } as Record<string, string>)[kind]}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+

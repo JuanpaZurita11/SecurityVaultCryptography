@@ -1,6 +1,6 @@
 import { describe, it, expect} from 'vitest';
-import { SymmetricEncryption, CipherObject, bytesToB64, b64ToBytes} from '../src/d1.js';
-
+import { SymmetricEncryption, CipherObject, bytesToB64, b64ToBytes} from '../src/d2.js';
+import { randomBytes } from '@noble/ciphers/utils.js';
 
 describe('SignatureCryptoModule Integrity Tests', () => {
   const symmetricModule: SymmetricEncryption = new SymmetricEncryption();
@@ -38,8 +38,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
 
     const {container, symmetricKey} = symmetricModule.encrypt_file(cipherObject);
 
-    const wrongKey = symmetricModule.generate_symmetric_key();
-
+    const wrongKey = randomBytes(32);
 
     const callDecrypt = () => {
       try {

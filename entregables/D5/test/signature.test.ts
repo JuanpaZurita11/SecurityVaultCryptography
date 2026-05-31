@@ -1,7 +1,6 @@
 import { describe, it, expect} from 'vitest';
 import { KeyManager } from '../src/key_manager.js';
 import { CipherObject, SignatureCryptoModule, SignContainer, bytesToB64} from '../src/signature_crypto_module.js';
-import { KeyWrap } from '../src/signature_crypto_module.js';
 import { sha256 } from '@noble/hashes/webcrypto.js';
 
 
@@ -24,7 +23,6 @@ describe('SignatureCryptoModule Integrity Tests', () => {
       file_type: fileType,
       filename: "secret.txt",
       recipients: [
-        { username: 'Juan', publicKey: ownerKeys.publicKey },
         { username: 'Alice', publicKey: user1Keys.publicKey },
         { username: 'Bob', publicKey: user2Keys.publicKey }
       ]
@@ -74,16 +72,13 @@ describe('SignatureCryptoModule Integrity Tests', () => {
   });
 
   it('should acccept a valid signature', async () => {
+
     const ownerKeys = keyManager.generate_key_pair();
-    const aliceKeys = keyManager.generate_key_pair();
 
     const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
-      filename: "secret.txt",
-      recipients: [
-        { username: 'Juan', publicKey: ownerKeys.publicKey }
-      ]
+      filename: "secret.txt"
     };
 
     const container: SignContainer = signatureModule.create_container(
@@ -96,7 +91,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     const fingerprintOwner = bytesToB64( await sha256(ownerKeys.publicKey) );
 
     expect(container.metaData.owner_fingerprint).toBe(fingerprintOwner);
-    expect(signatureModule.validate_container(container, ownerKeys.publicKey)).toBe(true);
+    expect(signatureModule.validate_container_signature(container, ownerKeys.publicKey)).toBe(true);
   });
 
   it('should reject when ciphertext is modified', () => {
@@ -106,10 +101,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
-      filename: "secret.txt",
-      recipients: [
-        { username: 'Juan', publicKey: ownerKeys.publicKey }
-      ]
+      filename: "secret.txt"
     };
 
     const container: SignContainer = signatureModule.create_container(
@@ -123,7 +115,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     const original = container.cipherText_w_tag;
     container.cipherText_w_tag = original.substring(0, original.length - 1) + (original.endsWith('A') ? 'B' : 'A');
 
-    expect(signatureModule.validate_container(container, ownerKeys.publicKey)).toBe(false);
+    expect(signatureModule.validate_container_signature(container, ownerKeys.publicKey)).toBe(false);
   });
 
   it('should reject when metadata is modified', () => {
@@ -133,10 +125,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     const cipherObject : CipherObject = {
       data: rawData,
       file_type: fileType,
-      filename: "secret.txt",
-      recipients: [
-        { username: 'Juan', publicKey: ownerKeys.publicKey }
-      ]
+      filename: "secret.txt"
     };
 
     const container: SignContainer = signatureModule.create_container(
@@ -149,7 +138,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
     // Alterar la metadata (ej. cambiar el timestamp o el tipo de archivo)
     container.metaData.file_type = "application/malicious";
 
-    expect(signatureModule.validate_container(container, ownerKeys.publicKey)).toBe(false);
+    expect(signatureModule.validate_container_signature(container, ownerKeys.publicKey)).toBe(false);
   });
 
   it('should reject when the wrong public key is used for container signature validation', () => {
@@ -173,8 +162,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
 
     const attackerKeys = keyManager.generate_key_pair();
 
-    // El validador intenta usar la llave del atacante en lugar de la de Alice
-    expect(signatureModule.validate_container(container, attackerKeys.publicKey)
+    expect(signatureModule.validate_container_signature(container, attackerKeys.publicKey)
     ).toBe(false);
   });
 
@@ -189,7 +177,6 @@ describe('SignatureCryptoModule Integrity Tests', () => {
       file_type: fileType,
       filename: "secret.txt",
       recipients: [
-        { username: 'Juan', publicKey: ownerKeys.publicKey },
         { username: 'Alice', publicKey: user1Keys.publicKey },
       ]
     };
@@ -236,7 +223,7 @@ describe('SignatureCryptoModule Integrity Tests', () => {
 
     const callback = () => {
       try{
-        return signatureModule.validate_container(container, ownerKeys.publicKey);
+        return signatureModule.validate_container_signature(container, ownerKeys.publicKey);
       } catch(err){
         console.log("Error capturado: ", (err as Error).message);
         throw err;
@@ -284,5 +271,99 @@ describe('SignatureCryptoModule Integrity Tests', () => {
 
     expect(ownerDecrypted).toBe(message);
   });
+
+  it("Remove recipients and add recipients dynamically", () => {
+
+		const ownerKeys= keyManager.generate_key_pair();
+		const aliceKeys = keyManager.generate_key_pair();
+		const bobKeys = keyManager.generate_key_pair();
+		const hankKeys = keyManager.generate_key_pair();
+
+		const cipherObject: CipherObject = {
+			data: rawData,
+			file_type: fileType,
+			filename: "secret.txt",
+			recipients: [
+				{
+					username: "Alice",
+					publicKey: aliceKeys.publicKey,
+				},
+				{
+					username: "Bob",
+					publicKey: bobKeys.publicKey,
+				},
+			],
+		};
+
+		let container: SignContainer = signatureModule.create_container(
+			ownerKeys.privateKey,
+			ownerKeys.publicKey,
+			"Juan",
+			cipherObject,
+		);
+		container = signatureModule.remove_recipients_from_container(
+			container,
+			ownerKeys.publicKey,
+			ownerKeys.privateKey,
+			["Alice"],
+		);
+		container = signatureModule.add_recipients_to_container(
+			container,
+			ownerKeys.publicKey,
+      ownerKeys.privateKey,
+			[
+				{
+					username: "Hank",
+					publicKey: hankKeys.publicKey,
+				},
+			],
+		);
+
+		const callback = () => {
+			try {
+				return signatureModule.decrypt_container(
+					container,
+					"Alice",
+					aliceKeys.privateKey,
+          ownerKeys.publicKey
+				);
+			} catch (err) {
+				console.log("Error capturado: ", (err as Error).message);
+				throw err;
+			}
+		};
+
+		const decrytpOwner: Uint8Array = signatureModule.decrypt_container(
+			container,
+			"Juan",
+			ownerKeys.privateKey,
+			ownerKeys.publicKey,
+		);
+		const decrytpBob: Uint8Array = signatureModule.decrypt_container(
+			container,
+			"Bob",
+			bobKeys.privateKey,
+			ownerKeys.publicKey,
+		);
+		const decryptHank: Uint8Array = signatureModule.decrypt_container(
+			container,
+			"Hank",
+			hankKeys.privateKey,
+			ownerKeys.publicKey,
+		);
+
+		const ownerDec = new TextDecoder().decode(decrytpOwner);
+		const bobDec = new TextDecoder().decode(decrytpBob);
+		const hankDec = new TextDecoder().decode(decryptHank);
+
+		console.log("Bob decrypted: ", bobDec);
+		console.log("Owner decrypted: ", ownerDec);
+		console.log("Hank decrypted: ", hankDec);
+
+		expect(callback).toThrow();
+		expect(bobDec).toBe(message);
+		expect(ownerDec).toBe(message);
+		expect(hankDec).toBe(message);
+	}, 15000);
 
 });

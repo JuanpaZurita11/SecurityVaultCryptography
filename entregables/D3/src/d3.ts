@@ -28,6 +28,39 @@
 import { randomBytes } from "@noble/ciphers/utils.js";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import stringify from "fast-json-stable-stringify";
+import { z } from "zod";
+
+
+const KeyWrapSchema = z.object({
+  username:   z.string(),
+  wrappedKey: z.string(),
+})
+
+const ContainerSchema = z.object({
+  metaData: z.object({
+    filename:   z.string(),
+    file_type:  z.string(),
+    timestamp:  z.string(),
+    encryption: z.string(),
+    symmetric: z.object({
+      cipher:           z.string(),
+      key_size_bits:    z.number(),
+      nonce_size_bytes: z.number(),
+      tag_size_bytes:   z.number(),
+    }),
+    asymmetric: z.object({
+      cipher:           z.string(),
+      key_size_bits:    z.number(),
+      public_exponent:  z.number(),
+      hash:             z.string(),
+      mgf:              z.string(),
+    }),
+    nonce:      z.string(),
+    recipients: z.array(KeyWrapSchema).min(1),
+  }),
+  cipherText_w_tag: z.string(),
+})
+
 
 // Interfaces internas
 
@@ -455,6 +488,11 @@ export class HybridEncryption {
 		recipientUsername: string,
 		recipientPrivateKey: CryptoKey,
 	): Promise<Uint8Array> {
+
+		if(!this.verify_container_structure(container)) {
+			throw new Error("Invalid container structure");
+		}
+
 		const metaData: EncryptionMetadata = container.metaData;
 		const cipherText_w_tag = b64ToBytes(container.cipherText_w_tag);
 
@@ -477,5 +515,9 @@ export class HybridEncryption {
 		const aad = new TextEncoder().encode(stringify(metaData));
 		const chacha = xchacha20poly1305(symmetricKey, nonce, aad);
 		return chacha.decrypt(cipherText_w_tag);
+	}
+
+	verify_container_structure(container: object): boolean {
+		return ContainerSchema.safeParse(container).success;
 	}
 }

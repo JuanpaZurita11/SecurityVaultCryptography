@@ -134,7 +134,7 @@ interface AAD {
  *
  * @interface KeyWrap
  */
-export interface KeyWrap {
+interface KeyWrap {
 	/** Nombre del destinatario, usado como identificador durante el descifrado. */
 	username: string;
 	/** Nonce de 192 bits del XChaCha20 de wrap, en Base64. */
@@ -273,10 +273,11 @@ interface UserInfo {
 }
 
 /**
- * Datos de entrada para cifrar un archivo en D6.
+ * Datos de entrada para cifrar un archivo.
  *
- * A diferencia de D5, `recipients` es opcional porque el propietario
- * siempre puede descifrar su propio archivo a través del `ownerWrap`.
+ *
+ * A diferencia de D3, ya no es necesario
+ * pasar la información del propietario como mínimo en el atributo de destinatario.
  *
  * @interface CipherObject
  */
@@ -593,7 +594,7 @@ export class CryptoModule {
 			};
 		} catch (err) {
 			throw Error(
-				"Hubo un problema, no se pudo actualizar la contraseña",
+				"Not able to change password, something went wrong.",
 			);
 		}
 	}
@@ -669,11 +670,6 @@ export class CryptoModule {
 
 	/**
 	 * Cifra un archivo usando ECIES-style con `ownerWrap` separado.
-	 *
-	 * **Diferencia crítica respecto a D5:**
-	 * En D6 el propietario tiene su propio `ownerWrap` (par efímero X25519 independiente),
-	 * almacenado en el AAD del ciphertext. Cada destinatario en `recipients` también
-	 * tiene su propio par efímero independiente, maximizando el forward secrecy.
 	 *
 	 * **Flujo:**
 	 * ```
@@ -807,8 +803,11 @@ export class CryptoModule {
 		password: string,
 		owner_publicKey: Uint8Array,
 	): Uint8Array {
+		if (!this.verify_container_structure(container))
+			throw new Error("Invalid container structure");
+
 		if (!this.validate_container_signature(container, owner_publicKey))
-			throw new Error("Firma no valida");
+			throw new Error("Invalid signature");
 
 		const metaData = container.metaData;
 
@@ -862,7 +861,6 @@ export class CryptoModule {
 	}
 
 	/**
-	 * Crea y firma un contenedor cifrado completo.
 	 *
 	 * Obtiene la llave privada del propietario desde su `KeyStorage`, la usa para
 	 * cifrar (via {@link encrypt_file}) y firmar el contenedor resultante.
@@ -946,7 +944,7 @@ export class CryptoModule {
 	): SignContainer {
 		const publicKey = b64ToBytes(owner_secureKeyStorage.public_key);
 		if (!this.validate_container_signature(container, publicKey))
-			throw new Error("Firma no válida");
+			throw new Error("Invalida signature");
 
 		const updatedContainer: SignContainer = structuredClone(container);
 
@@ -1018,7 +1016,7 @@ export class CryptoModule {
 				ed25519.sign(payloadDump, privateKey),
 			);
 		} catch (err) {
-			throw new Error("No se puedieron actualizar las llaves");
+			throw new Error("Not able to update keys, something went wrong.");
 		}
 
 		return updatedContainer;
