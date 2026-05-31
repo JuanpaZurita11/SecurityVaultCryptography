@@ -61,12 +61,10 @@ export default function D2Page() {
         subtitle="Authenticated encryption for files using XChaCha20-Poly1305 (AEAD). Provides confidentiality, integrity, and tamper detection with a single 256-bit key."
       />
 
-      {/* ── 1. System Overview ── */}
-      <Section id="overview" title="System Overview">
+      {/* ── 1. Module Overview ── */}
+      <Section id="overview" title="Module Overview">
         <P>
-          This module is the <strong>encryption core</strong> of the Secure Digital Document Vault.
-          Every file entering the vault is encrypted with a freshly generated symmetric key using
-          <Code>XChaCha20-Poly1305</Code>, an Authenticated Encryption with Associated Data (AEAD)
+          Every file is encrypted with a freshly generated 256 bit symmetric key using <Code>XChaCha20-Poly1305</Code>, an Authenticated Encryption with Associated Data (AEAD)
           scheme that simultaneously guarantees confidentiality and integrity.
         </P>
 
@@ -92,7 +90,7 @@ export default function D2Page() {
         <P>
           A separate hash does not provide <em>authenticated</em> integrity — an attacker who can
           modify the ciphertext can also recompute the hash. AEAD binds the authentication tag
-          cryptographically to the key, detecting both accidental corruption and deliberate tampering.
+          cryptographically to the key and ciphertext, detecting both accidental corruption and deliberate tampering.
         </P>
 
         <Callout kind="info">
@@ -109,11 +107,6 @@ export default function D2Page() {
           makes random collisions negligible even at scale.
         </P>
 
-        <Callout kind="danger">
-          The <Code>symmetricKey</Code> returned by <Code>encrypt_file</Code> must never be stored
-          alongside the container. In D3 it is wrapped with the recipient's RSA public key before
-          transmission.
-        </Callout>
       </Section>
 
       {/* ── 2. Container Structure ── */}
@@ -164,7 +157,7 @@ export default function D2Page() {
         ]} />
         <Returns
           type="{ container: Container; symmetricKey: Uint8Array }"
-          description="The encrypted container (safe to store/send) and the 32-byte symmetric key (must be protected separately)."
+          description="The encrypted container (safe to store/send) and the 32-byte symmetric key."
         />
         <CodeBlock code={encryptExample} />
 

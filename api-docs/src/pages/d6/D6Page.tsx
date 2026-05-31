@@ -2,6 +2,7 @@ import {
   PageHeader, Section, SubHeading, P, Code, CodeBlock,
   Callout, ParamTable, Returns, Throws, MethodSignature,
 } from '../../components/DocPrimitives';
+import D6Demo from './D6Demo';
 
 // ── Code snippets ──────────────────────────────────────
 const keygenExample = `import { CryptoModule } from 'd6'
@@ -366,7 +367,7 @@ export default function D6Page() {
 
       {/* ── 4. Demo ── */}
       <Section id="demo" title="Demo">
-        <h1>Hola</h1>
+        <D6Demo />
       </Section>
     </div>
   )

@@ -13,6 +13,7 @@
     "d2-crypto": "file:../entregables/D2",
     "d3-crypto": "file:../entregables/D3",
     "d5-crypto": "file:../entregables/D5",
+    "d6-crypto": "file:../entregables/D6",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.16.0"
