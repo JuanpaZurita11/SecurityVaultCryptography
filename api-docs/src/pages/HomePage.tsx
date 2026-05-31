@@ -71,8 +71,8 @@ export default function HomePage() {
           Secure Digital Document Vault
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.975rem', maxWidth: '600px', lineHeight: 1.75, marginBottom: '1.25rem' }}>
-          Secure Digital Document Vault is a cryptographic system for protecting, sharing, and verifying digital documents. Every encrypted file is packaged into a self-contained, self-protecting container — it carries its own encryption parameters, recipient access list, and digital signature. No external metadata is needed to verify or decrypt it.
-          The system is built around a simple principle: keys and ciphertext are always separate. An attacker who obtains the encrypted file gains nothing without the corresponding private key, and vice versa. Identity is anchored by digital signatures — not by trust in the storage layer.
+          Secure Digital Document Vault is a cryptographic system for protecting and sharing digital documents. Every encrypted file is packaged into a self-contained, self-protecting container — it carries its own encryption parameters, recipient access list, and digital signature. No external metadata is needed to verify or decrypt it.
+          The system is built around a simple principle: keys and ciphertext are always separate. An attacker who obtains the encrypted file gains nothing without the corresponding private key, and vice versa.
         </p>
       </div>
 

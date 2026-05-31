@@ -41,7 +41,7 @@ const ContainerSchema = z.object({
     filename:   z.string(),
     file_type:  z.string(),
     timestamp:  z.string(),
-    encryption: z.literal('Hybrid'),
+    encryption: z.string(),
     symmetric: z.object({
       cipher:           z.string(),
       key_size_bits:    z.number(),

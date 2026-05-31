@@ -1,33 +1,25 @@
 import {
   PageHeader, Section, SubHeading, P, Code, CodeBlock,
   Callout, ParamTable, Returns, Throws, MethodSignature,
+  JsonSchema,
 } from '../../components/DocPrimitives';
 import D2Demo from './D2Demo';
 
 
 // ── Code snippets ──────────────────────────────────────
-const encryptExample = `import { SymmetricEncryption } from 'd2'
+const example = `import { SymmetricEncryption } from 'd2'
 
-const enc = new SymmetricEncryption()
+const symmetricModule = new SymmetricEncryption();
 
-const { container, symmetricKey } = enc.encrypt_file({
+const { container, symmetricKey } = symmetricModule.encrypt_file({
   data: new TextEncoder().encode('Secret document content'),
   filename: 'report.txt',
   file_type: 'text/plain',
-})
+});
 
-// container → persist / send to recipient
-// symmetricKey → wrap with recipient's public key (D3)`
+const decryptedText = symmetricModule.decrypt_file(container, symmetricKey);
 
-const decryptExample = `import { SymmetricEncryption, b64ToBytes } from 'd2'
-
-const enc = new SymmetricEncryption()
-
-// Restore key from bytes (typically unwrapped from D3)
-const plaintext = enc.decrypt_file(container, symmetricKey)
-
-console.log(new TextDecoder().decode(plaintext))
-// → 'Secret document content'`
+const data_ = new TextDecoder().decode(decryptedText);`
 
 const containerSchema = `{
   "metaData": {
@@ -45,12 +37,6 @@ const containerSchema = `{
   },
   "cipherText_w_tag": string     // Base64-encoded ciphertext + Poly1305 tag
 }`
-
-const utilExample = `import { bytesToB64, b64ToBytes } from 'd2'
-
-const key   = crypto.getRandomValues(new Uint8Array(32))
-const b64   = bytesToB64(key)    // → "aBcD…"
-const back  = b64ToBytes(b64)    // → Uint8Array(32)`
 
 export default function D2Page() {
   return (
@@ -119,7 +105,7 @@ export default function D2Page() {
           invalidate the Poly1305 tag and abort decryption.
         </P>
 
-        <CodeBlock code={containerSchema} lang="json" />
+        <JsonSchema schema={containerSchema}/>
 
         <SubHeading>metaData as AAD</SubHeading>
         <P>
@@ -159,7 +145,6 @@ export default function D2Page() {
           type="{ container: Container; symmetricKey: Uint8Array }"
           description="The encrypted container (safe to store/send) and the 32-byte symmetric key."
         />
-        <CodeBlock code={encryptExample} />
 
         {/* decrypt_file */}
         <MethodSignature signature="decrypt_file(container: Container, symmetricKey: Uint8Array): Uint8Array" />
@@ -172,21 +157,22 @@ export default function D2Page() {
           { name: 'container',    type: 'Container',   description: 'Container object produced by encrypt_file.' },
           { name: 'symmetricKey', type: 'Uint8Array',  description: '32-byte key originally returned by encrypt_file.' },
         ]} />
-        <Returns type="Uint8Array" description="The original file bytes if tag verification passes." />
-        <Throws description="Throws an Error if the key is incorrect, the ciphertext has been modified, or any metadata field has been altered." />
-        <CodeBlock code={decryptExample} />
+        <Returns type="Uint8Array" description="The original file bytes" />
+        <Throws description="Throws an Error if the container structure is invalid, the key is incorrect, the ciphertext has been modified, or any metadata field has been altered." />
 
         {/* verify_container_structure */}
         <MethodSignature signature="verify_container_structure(container: object): boolean" />
         <P>
           Validates the shape of an untrusted object against the expected{' '}
-          <Code>Container</Code> schema using <Code>zod</Code>. Use before attempting decryption
+          <Code>Container</Code> schema using the library <Code>zod</Code>. Use before attempting decryption
           on externally received data.
         </P>
         <ParamTable params={[
           { name: 'container', type: 'object', description: 'Any object to validate.' },
         ]} />
         <Returns type="boolean" description="true if the object matches the Container schema, false otherwise." />
+
+        <CodeBlock code={example} />
 
         {/* Utilities */}
         <SubHeading>Utility functions</SubHeading>
@@ -197,7 +183,6 @@ export default function D2Page() {
         <MethodSignature signature="b64ToBytes(b64: string): Uint8Array" />
         <P>Decodes a Base64 string back to a byte array.</P>
 
-        <CodeBlock code={utilExample} />
       </Section>
 
       {/* ── 4. Demo ── */}

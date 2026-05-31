@@ -177,7 +177,7 @@ export class KeyManager {
 		const pemHeader = "-----BEGIN PUBLIC KEY-----";
 		const pemFooter = "-----END PUBLIC KEY-----";
 		if (!pem.includes(pemHeader) || !pem.includes(pemFooter)) {
-			throw new Error("La clave no tiene estructura PEM");
+			throw new Error("The key is not in PEM format");
 		}
 		const pemContents = pem
 			.substring(pemHeader.length, pem.length - pemFooter.length)
@@ -225,7 +225,7 @@ export class KeyManager {
 		const pemHeader = "-----BEGIN PRIVATE KEY-----";
 		const pemFooter = "-----END PRIVATE KEY-----";
 		if (!pem.includes(pemHeader) || !pem.includes(pemFooter)) {
-			throw new Error("La clave no tiene estructura PEM");
+			throw new Error("The key is not in PEM format");
 		}
 		const pemContents = pem
 			.substring(pemHeader.length, pem.length - pemFooter.length)

@@ -1,6 +1,7 @@
 import {
   PageHeader, Section, SubHeading, P, Code, CodeBlock,
   Callout, ParamTable, Returns, Throws, MethodSignature,
+  JsonSchema,
 } from '../../components/DocPrimitives'
 import D3Demo from './D3Demo'
 
@@ -20,7 +21,7 @@ const privatePem = await km.exportPrivateKey(privateKey)
 const importedPub  = await km.importPublicKey(publicPem)
 const importedPriv = await km.importPrivateKey(privatePem)`
 
-const encryptExample = `import { HybridEncryption, KeyManager } from 'd3'
+const example = `import { HybridEncryption, KeyManager } from 'd3'
 
 const enc = new HybridEncryption()
 const km  = new KeyManager()
@@ -38,22 +39,13 @@ const container = await enc.encrypt_file({
   ],
 })
 
-// container is safe to store or transmit
-// it carries wrapped keys for each recipient`
+const decryptedByAlice = await enc.decrypt_file(container, 'alice', alice.privateKey);
+const decryptedByBob   = await enc.decrypt_file(container, 'bob', bob.privateKey);
 
-const decryptExample = `import { HybridEncryption } from 'd3'
+console.log(new TextDecoder().decode(decryptedByAlice));
 
-const enc = new HybridEncryption()
+// decryptedByAlice === decryptedByBob -> true`
 
-// Alice decrypts using her private key
-const plaintext = await enc.decrypt_file(
-  container,
-  'alice',
-  alice.privateKey
-)
-
-console.log(new TextDecoder().decode(plaintext))
-// → 'Secret document'`
 
 const containerSchema = `{
   "metaData": {
@@ -95,7 +87,7 @@ export default function D3Page() {
       />
 
       {/* ── 1. System Overview ── */}
-      <Section id="overview" title="System Overview">
+      <Section id="overview" title="Module Overview">
         <P>
           D3 extends D2 by solving the <strong>key distribution problem</strong>: how to share an
           encrypted file with multiple recipients without encrypting it multiple times. The solution
@@ -115,20 +107,16 @@ export default function D3Page() {
         <SubHeading>Encryption flow</SubHeading>
         <P>
           <strong>1.</strong> A random 256-bit <em>file key</em> and 192-bit nonce are generated.<br />
-          <strong>2.</strong> The file is encrypted once with <Code>XChaCha20-Poly1305</Code> using
-          the full metadata (including recipient list) as AAD.<br />
-          <strong>3.</strong> The file key is wrapped with each recipient's RSA-2048 public key via
-          <Code>RSA-OAEP</Code>, producing one <Code>wrappedKey</Code> per recipient.<br />
+          <strong>2.</strong> The file is encrypted once with <Code>XChaCha20-Poly1305</Code>, including recipient list in the AAD.<br />
+          <strong>3.</strong> The file key is wrapped with each recipient's RSA-2048 public key via <Code>RSA-OAEP</Code>, producing one <Code>wrappedKey</Code> per recipient.<br />
           <strong>4.</strong> Everything is packed into a single <Code>Container</Code>.
         </P>
 
         <SubHeading>Decryption flow</SubHeading>
         <P>
-          <strong>1.</strong> The recipient locates their entry in <Code>metaData.recipients</Code>
-          by username.<br />
+          <strong>1.</strong> The interested in decryption locates their entry in <Code>metaData.recipients</Code> by username.<br />
           <strong>2.</strong> Their RSA private key unwraps the file key via <Code>RSA-OAEP</Code>.<br />
-          <strong>3.</strong> <Code>XChaCha20-Poly1305</Code> decrypts and authenticates the file,
-          verifying the full metadata as AAD.
+          <strong>3.</strong> <Code>XChaCha20-Poly1305</Code> decrypts and authenticates the file — same as D2, but with the recipient list included in the AAD, binding authorized access to the ciphertext.
         </P>
 
         <Callout kind="info">
@@ -146,11 +134,10 @@ export default function D3Page() {
       <Section id="container" title="Container Structure">
         <P>
           The container produced by <Code>encrypt_file</Code> is a self-describing JSON object.
-          The <Code>metaData</Code> block is serialized with <Code>fast-json-stable-stringify</Code>
-          and used verbatim as AAD, so any post-encryption modification breaks authentication.
+          The <Code>metaData</Code> block is serialized with <Code>fast-json-stable-stringify</Code> and used verbatim as AAD, so any post-encryption modification breaks authentication.
         </P>
 
-        <CodeBlock code={containerSchema} lang="json" />
+        <JsonSchema schema={containerSchema}/>
 
         <SubHeading>KeyWrap entries</SubHeading>
         <P>
@@ -167,9 +154,7 @@ export default function D3Page() {
         {/* KeyManager */}
         <SubHeading>KeyManager</SubHeading>
         <P>
-          Handles RSA-2048 key generation, export and import using the browser's
-          <Code>SubtleCrypto</Code> API. Keys are represented as opaque <Code>CryptoKey</Code>
-          objects and serialized in SPKI/PKCS#8 PEM format (RFC 5958).
+          Handles RSA-2048 key generation, export and import using the browser's <Code>SubtleCrypto</Code> API. Keys are represented as opaque <Code>CryptoKey</Code> objects and serialized in SPKI/PKCS#8 PEM format (RFC 5958).
         </P>
 
         <MethodSignature signature="generate_key_pair(): Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }>" />
@@ -214,7 +199,6 @@ export default function D3Page() {
         ]} />
         <Returns type="Promise<Container>" description="Encrypted container with ciphertext and per-recipient wrapped keys." />
         <Throws description="Throws Error if recipients array is empty." />
-        <CodeBlock code={encryptExample} />
 
         <MethodSignature signature="decrypt_file(container, recipientUsername, recipientPrivateKey): Promise<Uint8Array>" />
         <P>
@@ -229,13 +213,13 @@ export default function D3Page() {
         ]} />
         <Returns type="Promise<Uint8Array>" description="Original file bytes if authentication passes." />
         <Throws description='Throws "Invalid container structure" if the object does not match the expected schema. Throws "Recipient not found in metadata" if the username is not in the container. Throws a cryptographic error if the private key is wrong or metadata was tampered.' />
-        <CodeBlock code={decryptExample} />
+
+        <CodeBlock code={example} />
 
         <MethodSignature signature="verify_container_structure(container: object): boolean" />
         <P>
           Validates an untrusted object against the expected <Code>Container</Code> schema using
-          {' '}<Code>zod</Code>. Checks that all required fields are present with the correct types,
-          that <Code>encryption</Code> is exactly <Code>"Hybrid"</Code>, and that{' '}
+          {' '}<Code>zod</Code>. Checks that all required fields are present with the correct types and that{' '}
           <Code>recipients</Code> has at least one entry. Called internally by{' '}
           <Code>decrypt_file</Code> before any cryptographic operation.
         </P>

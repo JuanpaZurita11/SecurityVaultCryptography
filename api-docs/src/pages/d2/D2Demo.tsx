@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect} from 'react';
 import { SymmetricEncryption, b64ToBytes, bytesToB64} from 'd2-crypto';
 import type { CipherObject } from 'd2-crypto';
@@ -340,6 +339,7 @@ function DecryptPanel() {
   const [result, setResult]               = useState<Uint8Array | null>(null);
   const [error, setError]                 = useState<string | null>(null);
   const [container, setContainer]           = useState<any | null>(null);
+  const [containerError, setContainerError] = useState<string | null>(null);
 
   const reset = () => { setResult(null); setError(null) }
 
@@ -347,10 +347,18 @@ function DecryptPanel() {
     if (!containerFile) return
     containerFile.text().then(json => {
       try {
-        const container = JSON.parse(json)
-        setContainer(container)
+        const parsed = JSON.parse(json)
+        const symmetricModule = new SymmetricEncryption()
+        if (!symmetricModule.verify_container_structure(parsed)) {
+          setContainer(null)
+          setContainerError('Invalid container structure — this does not look like a valid encrypted container.')
+          return
+        }
+        setContainer(parsed)
+        setContainerError(null)
       } catch {
         setContainer(null)
+        setContainerError('Could not parse file — make sure it is a valid JSON container.')
       }
     })
   }, [containerFile])
@@ -387,8 +395,13 @@ function DecryptPanel() {
           accept=".json"
           file={containerFile}
           disabled={loading}
-          onChange={f => { setContainerFile(f); reset() }}
+          onChange={f => { setContainerFile(f); reset(); setContainerError(null) }}
         />
+        {containerError && (
+          <div style={{ ...mono, fontSize: '0.72rem', color: 'var(--error)', marginTop: '-0.5rem', marginBottom: '0.75rem' }}>
+            ✕ {containerError}
+          </div>
+        )}
 
         <div style={{ marginBottom: '1rem' }}>
           <span style={label}>Symmetric Key (Base64)</span>

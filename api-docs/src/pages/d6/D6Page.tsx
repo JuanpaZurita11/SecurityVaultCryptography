@@ -1,69 +1,15 @@
 import {
   PageHeader, Section, SubHeading, P, Code, CodeBlock,
   Callout, ParamTable, Returns, Throws, MethodSignature,
+  JsonSchema,
 } from '../../components/DocPrimitives';
 import D6Demo from './D6Demo';
 
 // ── Code snippets ──────────────────────────────────────
-const keygenExample = `import { CryptoModule } from 'd6'
-
-const cm = new CryptoModule()
-
-// Generate key pair — private key is encrypted with password
-const keyStorage = cm.generate_key_pair('my_secure_password')
-
-// keyStorage is safe to persist (localStorage, file, database)
-// The private key is encrypted; only the password can unlock it
-console.log(keyStorage.public_key) // Base64 plaintext public key`
-
-const getKeyExample = `// Recover public key — no password needed
-const publicKey = cm.getPublicKey(keyStorage)  // Uint8Array 32 bytes
-
-// Recover private key — password required
-const privateKey = cm.getPrivateKey(keyStorage, 'my_secure_password')
-// Use privateKey here, then let it go out of scope`
-
-const encryptExample = `const container = cm.create_container(
-  keyStorage,           // owner's KeyStorage
-  'my_secure_password', // owner's password
-  'alice',              // owner username → signer_id
-  {
-    data:      fileBytes,
-    filename:  'report.pdf',
-    file_type: 'application/pdf',
-    recipients: [
-      { username: 'bob', publicKey: bobPublicKey },
-    ],
-  }
-)`
-
-const decryptExample = `const plaintext = cm.decrypt_container(
-  container,
-  'bob',           // petitioner username
-  bobKeyStorage,   // petitioner's KeyStorage
-  'bob_password',  // petitioner's password
-  alicePublicKey   // owner public key to verify signature
-)`
-
 const updatePwdExample = `const newKeyStorage = cm.update_keystorage_password(
   keyStorage,
   'old_password',
   'new_password'
-)
-// Replace persisted keyStorage with newKeyStorage`
-
-const addExample = `const updated = cm.add_recipients_to_container(
-  container,
-  ownerKeyStorage,
-  'owner_password',
-  [{ username: 'carol', publicKey: carolPublicKey }]
-)`
-
-const removeExample = `const updated = cm.remove_recipients_from_container(
-  container,
-  ownerKeyStorage,
-  'owner_password',
-  ['bob']
 )`
 
 const updateRecipientExample = `// After bob rotates his key pair:
@@ -101,17 +47,13 @@ export default function D6Page() {
       <PageHeader
         badge="D6 — Key Management"
         title="Key Management Module"
-        subtitle="Password-protected Ed25519 key storage using PBKDF2 + XChaCha20-Poly1305, integrated with the full hybrid encryption and signing pipeline from D5."
+        subtitle="Private key protection using PBKDF2 + XChaCha20-Poly1305, continues with the full hybrid encryption and signing pipeline from D5."
       />
 
       {/* ── 1. System Overview ── */}
-      <Section id="overview" title="System Overview">
+      <Section id="overview" title="Module Overview">
         <P>
-          D6 is the final integration layer of the vault. It wraps everything from D5 inside a
-          single <Code>CryptoModule</Code> class that enforces one principle:{' '}
-          <strong>the private key never exists in plaintext outside of an operation's scope</strong>.
-          Every method that needs the private key receives a <Code>KeyStorage</Code> (the encrypted
-          key container) and a password. The key is decrypted in memory, used, and discarded.
+          D6 is the final iteration of the vault. It extends D5 by solving the last remaining vulnerability: raw private keys were exposed in plaintext. D6 introduces KeyStorage — an encrypted key container that enforces one principle: the private key never exists in plaintext outside of an operation's scope. Every method that needs the private key receives a KeyStorage and a password. The key is decrypted in memory, used, and discarded.
         </P>
 
         <SubHeading>KeyStorage — the encrypted key container</SubHeading>
@@ -124,16 +66,12 @@ export default function D6Page() {
           as AAD, so any modification to those fields causes decryption to fail.
         </P>
 
-        <SubHeading>Why PBKDF2 with 524,288 iterations?</SubHeading>
-        <P>
-          2<sup>19</sup> = 524,288 iterations make each brute-force attempt take roughly 500ms on
-          modern hardware. An attacker who obtains the <Code>KeyStorage</Code> file faces an
-          astronomically slow dictionary attack for passwords with reasonable entropy. PBKDF2 was
-          chosen over Argon2 because it is natively supported in browser environments without
-          excessive memory pressure on client hardware.
-        </P>
+        <Callout kind="info">
+          PBKDF2 was chosen over Argon2 because it is natively supported in browser environments without excessive memory pressure on client hardware.
+        </Callout>
 
-        <SubHeading>Public key lifecycle</SubHeading>
+
+        <SubHeading>Public key</SubHeading>
         <P>
           The public key is stored in plaintext inside <Code>KeyStorage.public_key</Code> and
           can be retrieved without a password via <Code>getPublicKey(keyStorage)</Code>. This means
@@ -141,35 +79,78 @@ export default function D6Page() {
           work from the <Code>KeyStorage</Code> file alone — no password required.
         </P>
 
-        <SubHeading>Key rotation strategy</SubHeading>
-        <P>
-          When a user's key pair is compromised or expires, they must rotate. The impact depends
-          on their role:
-        </P>
-        <P>
-          <strong>As owner:</strong> All containers signed with the old key must be fully
-          recreated — <Code>validate_container_signature</Code> will return <Code>false</Code>{' '}
-          for any container signed with the old key pair, signaling to recipients that
-          regeneration is needed.
-        </P>
-        <P>
-          <strong>As recipient:</strong> The owner re-wraps the symmetric key for the recipient's
-          new public key using <Code>update_container_recipientKeys</Code>, without touching the
-          ciphertext or re-encrypting the file.
-        </P>
+        {/* ── Key Lifecycle ── */}
+        <Section id="lifecycle" title="Key Lifecycle">
+          <P>
+            Every key pair goes through three stages: <strong>generation</strong>, <strong>usage</strong>,
+            and <strong>rotation</strong>. Rotation is the most critical — its impact on the system
+            depends entirely on the user's role in each container.
+          </P>
 
-        <Callout kind="danger">
-          If a second key rotation is attempted while containers are still pending regeneration,
-          the deprecated key slot is overwritten and those containers become permanently
-          inaccessible. The system must block consecutive rotations until all affected containers
-          are rebuilt.
+          <SubHeading>As owner — full container rebuild required</SubHeading>
+          <P>
+            If an owner rotates their key pair, all containers they signed with the old key must be
+            completely rebuilt using the new credentials. This is mandatory — not just recommended.
+            A compromised owner key means an attacker could not only decrypt existing containers but
+            also forge new signatures, making any container signed with the old key untrustworthy.
+            Rebuilding is the only way to establish a clean cryptographic anchor.
+          </P>
+          <P>
+            To manage this without data loss, the system maintains a maximum of two key states per
+            user: one <strong>active</strong> and one <strong>deprecated</strong>. When a rotation is
+            triggered, the active key shifts to the deprecated slot, new keys are generated, and all
+            existing containers are marked as <em>obsolete</em> and queued for rebuild.
+          </P>
+          <Callout kind="danger">
+            A second rotation cannot be initiated while the rebuild queue is not empty. If allowed,
+            it would overwrite the deprecated slot and permanently destroy access to every container
+            still waiting to be rebuilt — an irreversible loss.
+          </Callout>
+          <P>
+            Affected containers are detectable via <Code>validate_container_signature</Code> — it
+            returns <Code>false</Code> for any container whose owner fingerprint no longer matches
+            the current public key, signaling that a rebuild is needed.
+          </P>
+
+          <SubHeading>As recipient — key-update request</SubHeading>
+          <P>
+            Recipients do not have the cryptographic authority to modify a container directly —
+            only the owner can re-wrap keys. When a recipient rotates their key pair, they must
+            notify each container owner, who then calls <Code>update_container_recipientKeys</Code> to re-wrap the symmetric file key for the recipient's new public key. The file itself is
+            never re-encrypted.
+          </P>
+
+          <Callout kind="warn">
+            This creates a window of vulnerability between the moment of compromise and the moment
+            the owner re-wraps the key. The system relies on the recipient acting quickly and the
+            owner processing the request promptly.
+          </Callout>
+
+          <P>
+            Speed is critical here. Until the owner processes the update, an attacker who obtained
+            the old private key can still decrypt any container where the old wrapped key is present.
+            However, since containers are immutable from the recipient's perspective — only the owner
+            can change the content — the attacker cannot alter the data or escalate further. The
+            damage is bounded to read access on already-shared containers.
+          </P>
+
+          <Callout kind="info">
+          <strong>Application-level recommendation:</strong> maintain a maximum of two key pairs  —
+          one <strong>active</strong> and one <strong>deprecated</strong>. When a rotation is
+          triggered, the active key pair shifts to the deprecated slot and a new key pair is generated.
+          Containers are not rebuilt all at once — they are queued and processed incrementally,
+          which avoids a heavy all-at-once workload. During this period, both key slots are needed:
+          the deprecated key still decrypts containers in the queue, while the active key handles
+          new ones. A second rotation must be blocked until the queue is fully cleared — either by
+          rebuilding all pending containers or explicitly discarding the obsolete ones. Allowing a
+          consecutive rotation would overwrite the deprecated slot, making every queued container
+          permanently inaccessible.
         </Callout>
 
-        <Callout kind="info">
-          The public key can be derived from the private key in Ed25519, but{' '}
-          <Code>KeyStorage</Code> stores it explicitly for convenience — avoiding an extra
-          decryption step just to read the public key.
-        </Callout>
+
+        </Section>
+
+
       </Section>
 
       {/* ── 2. Container Structure ── */}
@@ -181,15 +162,11 @@ export default function D6Page() {
           <Code>encryptedPrivateKey_w_tag</Code>) is used as AAD during encryption, binding
           all parameters to the ciphertext cryptographically.
         </P>
-        <CodeBlock code={keystorageSchema} lang="json" />
+        <JsonSchema schema={keystorageSchema} />
 
         <SubHeading>AAD binding</SubHeading>
         <P>
-          Before encrypting the private key, the module builds a <Code>KeyStorageAad</Code>{' '}
-          object containing all fields except <Code>encryptedPrivateKey_w_tag</Code>, serializes
-          it with <Code>fast-json-stable-stringify</Code>, and passes it as AAD to{' '}
-          <Code>XChaCha20-Poly1305</Code>. Any post-storage modification to salt, nonce,
-          iterations, or public key will cause the Poly1305 tag to fail during decryption.
+          All fields in the <Code>KeyStorage</Code> schema — except <Code>encryptedPrivateKey_w_tag</Code> itself — are used as AAD. This means any post-storage modification to the salt, nonce, KDF parameters, or public key will cause the Poly1305 tag verification to fail, making decryption impossible. An attacker who tries to swap the public key or alter the iteration count gains nothing — the tag will reject the tampered container before any key material is exposed.
         </P>
       </Section>
 
@@ -197,39 +174,38 @@ export default function D6Page() {
       <Section id="api" title="API Reference">
 
         <SubHeading>CryptoModule</SubHeading>
-        <P>
-          Central class integrating key management with the full D5 encryption and signing
-          pipeline. All methods that need the private key accept <Code>KeyStorage + password</Code>{' '}
-          instead of raw key bytes.
-        </P>
+        <Callout kind="info">
+          Some methods carry over the same logic from D5 with
+          one difference: instead of receiving raw key bytes, they accept a <Code>KeyStorage</Code>
+          and a password. Their behavior and parameters are otherwise identical, so they are not
+          re-documented here. Refer to the <a href="/d5#api">D5 API Reference</a> for full details.
+        </Callout>
+
 
         {/* generate_key_pair */}
         <MethodSignature signature="generate_key_pair(password, expiration_data?): KeyStorage" />
         <P>
           Generates a fresh Ed25519 key pair, derives an encryption key from the password using
-          PBKDF2, and encrypts the private key with XChaCha20-Poly1305. Returns a{' '}
-          <Code>KeyStorage</Code> object safe for persistence.
+          PBKDF2, and encrypts the private key with XChaCha20-Poly1305.
         </P>
         <ParamTable params={[
           { name: 'password',        type: 'string', description: 'User password. Used to derive the encryption key via PBKDF2-SHA256 with a fresh random salt.' },
           { name: 'expiration_data', type: 'Date',   description: 'Reserved parameter, not yet implemented.', required: false },
         ]} />
-        <Returns type="KeyStorage" description="Self-describing encrypted key container. Safe to persist." />
-        <CodeBlock code={keygenExample} />
+        <Returns type="KeyStorage" description="Self-describing encrypted key container." />
 
         {/* getPrivateKey */}
         <MethodSignature signature="getPrivateKey(secureKeyStorage, password): Uint8Array" />
         <P>
           Re-derives the PBKDF2 key from the stored salt and the provided password, then
-          decrypts the private key with XChaCha20-Poly1305. Returns the raw 32-byte private key
-          in memory only — it is never stored.
+          decrypts the private key with XChaCha20-Poly1305.
         </P>
         <ParamTable params={[
           { name: 'secureKeyStorage', type: 'KeyStorage', description: 'KeyStorage produced by generate_key_pair.' },
           { name: 'password',         type: 'string',     description: 'User password.' },
         ]} />
         <Returns type="Uint8Array" description="32-byte Ed25519 private key. Use immediately and let go out of scope." />
-        <Throws description="Throws if the password is wrong or if any KeyStorage field was modified (Poly1305 tag failure)." />
+        <Throws description="Throws an Error if the password is wrong or if any KeyStorage field was modified (Poly1305 tag failure)." />
 
         {/* getPublicKey */}
         <MethodSignature signature="getPublicKey(secureKeyStorage): Uint8Array" />
@@ -237,7 +213,6 @@ export default function D6Page() {
           Decodes <Code>KeyStorage.public_key</Code> from Base64 to bytes. No password required.
         </P>
         <Returns type="Uint8Array" description="32-byte Ed25519 public key." />
-        <CodeBlock code={getKeyExample} />
 
         {/* update_keystorage_password */}
         <MethodSignature signature="update_keystorage_password(secureKeyStore, old_password, new_password): KeyStorage" />
@@ -251,77 +226,9 @@ export default function D6Page() {
           { name: 'new_password',   type: 'string',     description: 'New password to encrypt the private key with.' },
         ]} />
         <Returns type="KeyStorage" description="New KeyStorage with the same key pair but encrypted under the new password." />
-        <Throws description='"Hubo un problema, no se pudo actualizar la contraseña" if old_password is wrong.' />
+        <Throws description='Throws an Error if old_password is wrong.' />
         <CodeBlock code={updatePwdExample} />
 
-        {/* create_container */}
-        <MethodSignature signature="create_container(secureKeyStorage, password, owner_username, cipherObject): SignContainer" />
-        <P>
-          Decrypts the owner's private key, runs the full D5 encryption and signing pipeline,
-          and returns a signed container. The owner always gets an independent{' '}
-          <Code>ownerWrap</Code> entry and can always decrypt regardless of the recipients list.
-        </P>
-        <ParamTable params={[
-          { name: 'secureKeyStorage',      type: 'KeyStorage',  description: "Owner's KeyStorage." },
-          { name: 'password',              type: 'string',      description: "Owner's password." },
-          { name: 'owner_username',        type: 'string',      description: 'Stored as signer_id in the container.' },
-          { name: 'cipherObject.data',     type: 'Uint8Array',  description: 'Raw file bytes.' },
-          { name: 'cipherObject.filename', type: 'string',      description: 'Original filename.' },
-          { name: 'cipherObject.file_type',type: 'string',      description: 'MIME type.' },
-          { name: 'cipherObject.recipients',type: 'UserInfo[]', description: 'Optional array of { username, publicKey }.', required: false },
-        ]} />
-        <Returns type="SignContainer" description="Encrypted and signed container ready to distribute." />
-        <CodeBlock code={encryptExample} />
-
-        {/* decrypt_container */}
-        <MethodSignature signature="decrypt_container(container, petitioner_userName, petitioner_secureKeyStorage, password, owner_publicKey): Uint8Array" />
-        <P>
-          Verifies the container structure, validates the Ed25519 signature and owner fingerprint,
-          decrypts the petitioner's private key from their <Code>KeyStorage</Code>, performs
-          ECIES-style key unwrap, and decrypts the file.
-        </P>
-        <ParamTable params={[
-          { name: 'container',                    type: 'SignContainer', description: 'Container to decrypt.' },
-          { name: 'petitioner_userName',          type: 'string',       description: 'Username of the person requesting decryption.' },
-          { name: 'petitioner_secureKeyStorage',  type: 'KeyStorage',   description: "Petitioner's KeyStorage." },
-          { name: 'password',                     type: 'string',       description: "Petitioner's password." },
-          { name: 'owner_publicKey',              type: 'Uint8Array',   description: 'Owner public key to verify the signature.' },
-        ]} />
-        <Returns type="Uint8Array" description="Original file bytes if all checks pass." />
-        <Throws description='"Invalid container structure" if schema fails. "Invalid signature" if fingerprint or Ed25519 check fails. "Recipient not found in metadata" if username has no key wrap.' />
-        <CodeBlock code={decryptExample} />
-
-        {/* add_recipients_to_container */}
-        <MethodSignature signature="add_recipients_to_container(container, owner_secureKeyStorage, password, recipientsInfo): SignContainer" />
-        <P>
-          Recovers the symmetric key from <Code>ownerWrap</Code>, wraps it for each new
-          recipient via ECIES-style X25519/HKDF, and re-signs. Skips usernames already present.
-        </P>
-        <ParamTable params={[
-          { name: 'container',             type: 'SignContainer', description: 'Original signed container.' },
-          { name: 'owner_secureKeyStorage',type: 'KeyStorage',   description: "Owner's KeyStorage." },
-          { name: 'password',              type: 'string',       description: "Owner's password." },
-          { name: 'recipientsInfo',        type: 'UserInfo[]',   description: 'Array of { username, publicKey } to add.' },
-        ]} />
-        <Returns type="SignContainer" description="Updated container with new recipients and fresh signature." />
-        <Throws description='"Firma no válida" if signature check fails. "No se puedieron actualizar las llaves" on internal error.' />
-        <CodeBlock code={addExample} />
-
-        {/* remove_recipients_from_container */}
-        <MethodSignature signature="remove_recipients_from_container(container, owner_secureKeyStorage, password, usernamesToRemove): SignContainer" />
-        <P>
-          Validates the signature, filters the recipient list, and re-signs. No unwrap needed
-          for removal — it is purely a list operation followed by re-signing.
-        </P>
-        <ParamTable params={[
-          { name: 'container',              type: 'SignContainer', description: 'Original signed container.' },
-          { name: 'owner_secureKeyStorage', type: 'KeyStorage',   description: "Owner's KeyStorage." },
-          { name: 'password',               type: 'string',       description: "Owner's password." },
-          { name: 'usernamesToRemove',      type: 'string[]',     description: 'Usernames to remove from the recipient list.' },
-        ]} />
-        <Returns type="SignContainer" description="Updated container with reduced recipient list and fresh signature." />
-        <Throws description='"Firma no válida" if signature check fails. "No se pudo remover a los usuarios" on internal error.' />
-        <CodeBlock code={removeExample} />
 
         {/* update_container_recipientKeys */}
         <MethodSignature signature="update_container_recipientKeys(container, owner_secureKeyStorage, password, recipientsUpdate): SignContainer" />
@@ -337,18 +244,9 @@ export default function D6Page() {
           { name: 'recipientsUpdate',       type: 'UserInfo[]',   description: 'Array of { username, publicKey } with new public keys.' },
         ]} />
         <Returns type="SignContainer" description="Updated container with re-wrapped keys and fresh signature." />
-        <Throws description='"Firma no válida" if signature check fails. "No se puedieron actualizar las llaves" on internal error.' />
+        <Throws description='"Invalid signature" if signature check fails. "Not able to update keys, something went wrong." on internal error.' />
         <CodeBlock code={updateRecipientExample} />
 
-        {/* validate_container_signature */}
-        <MethodSignature signature="validate_container_signature(container, owner_publicKey): boolean" />
-        <P>
-          Verifies the owner fingerprint (<Code>SHA-256(owner_publicKey)</Code> vs stored
-          value) and then the Ed25519 signature over the canonical payload. Returns{' '}
-          <Code>false</Code> if either check fails — which signals key rotation when the
-          stored fingerprint no longer matches the provided public key.
-        </P>
-        <Returns type="boolean" description="true if both fingerprint and signature are valid, false otherwise." />
 
         {/* verify_container_structure */}
         <MethodSignature signature="verify_container_structure(container: object): boolean" />

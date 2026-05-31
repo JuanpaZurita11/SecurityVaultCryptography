@@ -1,6 +1,7 @@
 import {
   PageHeader, Section, SubHeading, P, Code, CodeBlock,
   Callout, ParamTable, Returns, Throws, MethodSignature,
+  JsonSchema,
 } from '../../components/DocPrimitives';
 import D5Demo from './D5Demo';
 
@@ -19,7 +20,7 @@ const privatePem = await km.serialize_private_key_pem(privateKey)
 const pubBytes  = await km.deserialize_public_key_pem(publicPem)
 const privBytes = await km.deserialize_private_key_pem(privatePem)`
 
-const encryptExample = `import { SignatureCryptoModule, KeyManager } from 'd5'
+const example = `import { SignatureCryptoModule, KeyManager } from 'd5'
 
 const km  = new KeyManager()
 const scm = new SignatureCryptoModule()
@@ -42,24 +43,28 @@ const container = scm.create_container(
     ],
   }
 )
-// container.signature   → Ed25519 signature in Base64
-// container.signer_id   → 'owner'
-// container.signature_algo → 'Ed25519'`
 
-const decryptExample = `import { SignatureCryptoModule } from 'd5'
-
-const scm = new SignatureCryptoModule()
-
-// Verify signature and decrypt in one step
-const plaintext = scm.decrypt_container(
+const decryptAlice = scm.decrypt_container(
   container,
   'alice',           // petitioner username
   alice.privateKey,  // petitioner private key (Ed25519 raw)
   owner.publicKey    // owner public key to verify signature
-)
+);
 
-console.log(new TextDecoder().decode(plaintext))
-// → 'Secret document'`
+const decryptOwner = scm.decrypt_container(
+  container,
+  'owner',           // petitioner username (same as owner)
+  owner.privateKey,  // owner private key (Ed25519 raw)
+  owner.publicKey    // owner public key to verify signature
+);
+
+
+const _data1 = new TextDecoder().decode(decrypt));
+const _data2 = new TextDecoder().decode(decryptOwner);
+
+// _data1 == _data2
+
+`
 
 const addExample = `const updated = scm.add_recipients_to_container(
   container,
@@ -125,7 +130,7 @@ export default function D5Page() {
       />
 
       {/* ── 1. System Overview ── */}
-      <Section id="overview" title="System Overview">
+      <Section id="overview" title="Module Overview">
         <P>
           D5 extends D3 with two major upgrades: the RSA-OAEP key wrapping scheme is replaced by
           an <strong>ECIES-style scheme over Curve25519</strong>, and the container is
@@ -133,14 +138,11 @@ export default function D5Page() {
           allow the recipient list to be modified without re-encrypting the file.
         </P>
 
-        <SubHeading>Why Ed25519 instead of RSA?</SubHeading>
-        <P>
-          Ed25519 offers 128-bit security with 32-byte keys — a fraction of the 256–512 bytes
-          typical of RSA-2048. Signatures are deterministic (no RNG dependency), faster, and
-          immune to a class of implementation errors that affect ECDSA. The same Ed25519 keys
-          can be mathematically converted to Curve25519 Montgomery form for ECDH key agreement,
-          eliminating the need for separate key pairs.
-        </P>
+        <SubHeading>Why Ed25519?</SubHeading>
+        <ul style={{ color: 'var(--text-secondary)', fontSize: '0.925rem', lineHeight: 1.8, paddingLeft: '1.25rem', margin: '0.5rem 0' }}>
+          <li><strong>Compact keys:</strong> 32-byte keys — a fraction of the 256–512 bytes required by RSA-2048 for equivalent strength.</li>
+          <li><strong>Dual use via key conversion:</strong> Ed25519 keys live on Curve25519 and can be converted to X25519 Montgomery form via <Code>toMontgomery</Code> — the same key pair handles both signing and ECDH key agreement.</li>
+        </ul>
 
         <SubHeading>ECIES-style key wrapping</SubHeading>
         <P>
@@ -164,20 +166,17 @@ export default function D5Page() {
 
         <SubHeading>Verification before decryption</SubHeading>
         <P>
-          <Code>decrypt_container</Code> always calls <Code>validate_container_signature</Code>
-          first. If the fingerprint or signature fails, decryption never runs — preventing
-          oracle attacks where error messages from a tampered container leak information.
+          <Code>decrypt_container</Code> always calls <Code>validate_container_signature</Code> first. Checks that the signature is valid and that the signer's public key fingerprint matches the one in the metadata (the owner's public key fingerprint). This ensures that decryption only proceeds if the container is authentic and unmodified, preventing wasteful decryption attempts on tampered data.
         </P>
 
         <Callout kind="info">
           The AAD covers everything in <Code>metaData</Code> except <Code>recipients</Code> and{' '}
           <Code>nonce</Code>. This is what makes recipient management dynamic while keeping the
-          ciphertext integrity intact.
+          ciphertext integrity intact. The nonce could have remained in the AAD — its exclusion was a deliberate simplification with no security impact, since the nonce is not a secret and is still protected by the signature layer.
         </Callout>
 
         <Callout kind="danger">
-          The owner always has their own <Code>ownerWrap</Code> entry independent of the
-          recipients list. Even if all recipients are removed, the owner can still decrypt.
+          In D3 the owner was just another entry in the recipients list — there was no cryptographic distinction between owner and recipient. D5 introduces a dedicated ownerWrap entry independent of the recipients list, and anchors the owner's identity through a public key fingerprint in the AAD. Even if all recipients are removed, the owner can always decrypt — and any attempt to impersonate the owner is detectable.
         </Callout>
       </Section>
 
@@ -187,10 +186,10 @@ export default function D5Page() {
           The <Code>SignContainer</Code> carries the encrypted file, per-recipient key wraps,
           and the Ed25519 signature. The signature covers{' '}
           <Code>{`{ metaData, cipherText_w_tag, signature_algo, signer_id }`}</Code> serialized
-          with <Code>fast-json-stable-stringify</Code>, binding the ciphertext and full metadata
+          with <Code>fast-json-stable-stringify</Code>, binding the ciphertext and full container metadata
           to the signer's identity.
         </P>
-        <CodeBlock code={containerSchema} lang="json" />
+        <JsonSchema schema={containerSchema}/>
       </Section>
 
       {/* ── 3. API Reference ── */}
@@ -208,6 +207,11 @@ export default function D5Page() {
         <P>Generates a fresh Ed25519 key pair synchronously using <Code>crypto.getRandomValues</Code> as entropy source.</P>
         <Returns type="{ publicKey: Uint8Array; privateKey: Uint8Array }" description="32-byte raw key arrays." />
 
+        <Callout kind="info">
+          All serialization and deserialization methods are async because they rely on the browser's{' '}
+          <Code>SubtleCrypto</Code> API (<Code>crypto.subtle</Code>), which is promise-based by design.
+        </Callout>
+
         <MethodSignature signature="serialize_public_key_pem(rawKey: Uint8Array): Promise<string>" />
         <P>Exports a raw Ed25519 public key to SPKI PEM format via <Code>SubtleCrypto</Code>.</P>
         <Returns type="Promise<string>" description='SPKI PEM string with "-----BEGIN PUBLIC KEY-----" header.' />
@@ -217,12 +221,14 @@ export default function D5Page() {
         <Returns type="Promise<string>" description='PKCS#8 PEM string with "-----BEGIN PRIVATE KEY-----" header.' />
 
         <MethodSignature signature="deserialize_public_key_pem(pem: string): Promise<Uint8Array>" />
-        <P>Imports a SPKI PEM and exports the raw 32-byte public key.</P>
-        <Throws description='Throws "La clave no tiene estructura PEM" if the PEM header/footer is missing.' />
+        <P>Imports a SPKI PEM and returns the raw 32-byte public key.</P>
+        <Returns type="Promise<Uint8Array>" description='32-byte raw public key.' />
+        <Throws description='Throws "The key is not in PEM format" if the PEM header/footer is missing.' />
 
         <MethodSignature signature="deserialize_private_key_pem(pem: string): Promise<Uint8Array>" />
-        <P>Imports a PKCS#8 PEM, re-exports the DER, and slices off the 16-byte header to recover the raw 32-byte private key.</P>
-        <Throws description='Throws "La clave no tiene estructura PEM" if the PEM header/footer is missing.' />
+        <P>Imports a PKCS#8 PEM and returns the raw 32-byte private key.</P>
+        <Returns type="Promise<Uint8Array>" description='32-byte raw private key.' />
+        <Throws description='Throws "The key is not in PEM format" if the PEM header/footer is missing.' />
         <CodeBlock code={keygenExample} />
 
         <SubHeading>SignatureCryptoModule</SubHeading>
@@ -230,28 +236,22 @@ export default function D5Page() {
 
         <MethodSignature signature="create_container(owner_privateKey, owner_publicKey, owner_username, cipherObject): SignContainer" />
         <P>
-          Encrypts the file with <Code>XChaCha20-Poly1305</Code>, wraps the symmetric key for
-          each recipient via ECIES-style X25519/HKDF, and signs the full container with
-          Ed25519. The owner always gets their own independent <Code>ownerWrap</Code>.
+          The file is encrypted once using <Code>XChaCha20-Poly1305</Code> with a randomly generated symmetric file key. Key distribution utilizes an ECIES-style Key Encapsulation Mechanism: for each recipient — including an independent <Code>ownerWrap</Code> for the owner — a fresh ephemeral X25519 key pair is generated. Since the system uses Ed25519 keys for identity, they are first converted to X25519 before the X25519 ECDH exchange can take place.  The resulting shared secret (between the ephimeralPrivateKey and the recipient's public key) is processed through HKDF-SHA256 to derive a dedicated wrap key, which then encrypts the symmetric file key via XChaCha20. Finally, to guarantee end-to-end integrity and non-repudiation, the entire cryptographic container is signed using the sender's Ed25519 key.
         </P>
         <ParamTable params={[
-          { name: 'owner_privateKey', type: 'Uint8Array', description: 'Owner Ed25519 private key (32 bytes). Used for signing and ownerWrap.' },
-          { name: 'owner_publicKey',  type: 'Uint8Array', description: 'Owner Ed25519 public key (32 bytes). SHA-256 fingerprint stored in AAD.' },
+          { name: 'owner_privateKey', type: 'Uint8Array', description: 'Owner Ed25519 raw private key (32 bytes).' },
+          { name: 'owner_publicKey',  type: 'Uint8Array', description: 'Owner Ed25519 raw public key (32 bytes).' },
           { name: 'owner_username',   type: 'string',     description: 'Stored as signer_id in the container.' },
           { name: 'cipherObject.data',      type: 'Uint8Array',   description: 'Raw file bytes.' },
-          { name: 'cipherObject.filename',  type: 'string',       description: 'Original filename.' },
-          { name: 'cipherObject.file_type', type: 'string',       description: 'MIME type.' },
+          { name: 'cipherObject.filename',  type: 'string',       description: 'Intended to be the original filename.' },
+          { name: 'cipherObject.file_type', type: 'string',       description: 'MIME type of the file to be encrypted.' },
           { name: 'cipherObject.recipients', type: 'UserInfo[]',  description: 'Optional array of { username, publicKey } for authorized recipients.', required: false },
         ]} />
         <Returns type="SignContainer" description="Signed container ready to distribute." />
-        <CodeBlock code={encryptExample} />
 
         <MethodSignature signature="decrypt_container(container, petitioner_userName, petitioner_privateKey, owner_publicKey): Uint8Array" />
         <P>
-          Verifies the Ed25519 signature and owner fingerprint, locates the petitioner's key wrap,
-          performs ECDH → HKDF → XChaCha20 unwrap to recover the symmetric key, then decrypts
-          the ciphertext. The owner can decrypt using their username and private key without
-          being in the recipients list.
+          First validates the Ed25519 signature and owner fingerprint — decryption is aborted if either check fails. Then locates the petitioner's KeyWrap entry by username (or ownerWrap if the petitioner is the owner). Using the petitioner's private key and the stored ephimeral_pub, the same shared secret from the original ECDH exchange is reconstructed — this is possible because ECDH is symmetric: ECDH(ephemeralPriv, recipientPub) = ECDH(recipientPriv, ephemeralPub). That shared secret is passed through HKDF-SHA256 to recover the wrap key, which unwraps the symmetric file key via XChaCha20. Finally, XChaCha20-Poly1305 decrypts using the symmetric key retrieve.
         </P>
         <ParamTable params={[
           { name: 'container',             type: 'SignContainer', description: 'Container produced by create_container.' },
@@ -260,8 +260,9 @@ export default function D5Page() {
           { name: 'owner_publicKey',       type: 'Uint8Array',    description: 'Ed25519 public key of the container owner, used to verify the signature.' },
         ]} />
         <Returns type="Uint8Array" description="Original file bytes if signature and authentication pass." />
-        <Throws description='"Firma no valida" if the signature or fingerprint check fails. "Recipient not found in metadata" if the username has no key wrap entry.' />
-        <CodeBlock code={decryptExample} />
+        <Throws description='"Invalid signature" if the signature check fails, "Invalid fingerprint" if the fingerprint check fails and "Recipient not found in metadata" if the username has no key wrap entry.' />
+
+        <CodeBlock code={example} />
 
         <MethodSignature signature="add_recipients_to_container(container, owner_publicKey, owner_privateKey, recipientsInfo): SignContainer" />
         <P>
@@ -276,7 +277,7 @@ export default function D5Page() {
           { name: 'recipientsInfo',   type: 'UserInfo[]',  description: 'Array of { username, publicKey } to add.' },
         ]} />
         <Returns type="SignContainer" description="New container with updated recipient list and fresh signature." />
-        <Throws description='"Firma no válida" if the container signature does not match. "No se puedieron actualizar las llaves" if any cryptographic operation fails.' />
+        <Throws description='"Invalid signature" if the container signature does not match. "No se puedieron actualizar las llaves" if any cryptographic operation fails.' />
         <CodeBlock code={addExample} />
 
         <MethodSignature signature="remove_recipients_from_container(container, owner_publicKey, owner_privateKey, usernamesToRemove): SignContainer" />
@@ -292,15 +293,14 @@ export default function D5Page() {
           { name: 'usernamesToRemove', type: 'string[]',    description: 'Usernames to remove from the recipient list.' },
         ]} />
         <Returns type="SignContainer" description="New container with reduced recipient list and fresh signature." />
-        <Throws description='"Firma no válida" if signature check fails. "No se pudo remover a los usuarios" if re-signing fails.' />
+        <Throws description='"Invalid signature" if signature check fails. "No se pudo remover a los usuarios" if re-signing fails.' />
         <CodeBlock code={removeExample} />
 
         <MethodSignature signature="validate_container_signature(container, owner_publicKey): boolean" />
         <P>
           Verifies the Ed25519 signature and owner fingerprint without decrypting. First checks
           that <Code>SHA-256(owner_publicKey)</Code> matches the <Code>owner_fingerprint</Code>{' '}
-          in the metadata (preventing identity substitution), then verifies the Ed25519 signature
-          over the canonical payload.
+          in the metadata (preventing identity substitution), then verifies the Ed25519 signature.
         </P>
         <ParamTable params={[
           { name: 'container',       type: 'SignContainer', description: 'Container to verify.' },

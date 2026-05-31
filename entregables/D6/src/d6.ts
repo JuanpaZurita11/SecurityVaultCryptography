@@ -594,7 +594,7 @@ export class CryptoModule {
 			};
 		} catch (err) {
 			throw Error(
-				"Hubo un problema, no se pudo actualizar la contraseña",
+				"Not able to change password, something went wrong.",
 			);
 		}
 	}
@@ -944,7 +944,7 @@ export class CryptoModule {
 	): SignContainer {
 		const publicKey = b64ToBytes(owner_secureKeyStorage.public_key);
 		if (!this.validate_container_signature(container, publicKey))
-			throw new Error("Firma no válida");
+			throw new Error("Invalida signature");
 
 		const updatedContainer: SignContainer = structuredClone(container);
 
@@ -1016,7 +1016,7 @@ export class CryptoModule {
 				ed25519.sign(payloadDump, privateKey),
 			);
 		} catch (err) {
-			throw new Error("No se puedieron actualizar las llaves");
+			throw new Error("Not able to update keys, something went wrong.");
 		}
 
 		return updatedContainer;
