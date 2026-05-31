@@ -439,7 +439,6 @@ export class CryptoModule {
 	 * distribuirla. La llave privada solo existe como `encryptedPrivateKey_w_tag`.
 	 *
 	 * @param password - Contraseña del usuario para derivar la llave de cifrado.
-	 * @param expiration_data - Fecha de expiración de la llave (parámetro reservado, no implementado).
 	 * @returns `KeyStorage` con la llave privada cifrada y todos los metadatos del KDF.
 	 *
 	 * @example
@@ -449,7 +448,7 @@ export class CryptoModule {
 	 * // Persistir 'storage' en localStorage, archivo JSON, etc.
 	 * ```
 	 */
-	generate_key_pair(password: string, expiration_data?: Date): KeyStorage {
+	generate_key_pair(password: string): KeyStorage {
 		const keyPair = ed25519.keygen();
 		const salt = randomBytes(16);
 		const nonce = randomBytes(24);

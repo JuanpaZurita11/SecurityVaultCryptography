@@ -48,7 +48,6 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { xchacha20poly1305, xchacha20 } from "@noble/ciphers/chacha.js";
 import stringify from "fast-json-stable-stringify";
 import { z } from "zod";
-import { th } from "zod/locales";
 
 // Interfaces internas
 
