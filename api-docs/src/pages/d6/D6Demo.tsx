@@ -13,10 +13,11 @@ const panel: React.CSSProperties = {
   background: 'var(--bg-card)', border: '1px solid var(--border)',
   borderRadius: '10px', overflow: 'hidden',
 }
-const panelHeader = (accent = 'var(--accent)'): React.CSSProperties => ({
+const panelHeader : React.CSSProperties = {
   borderBottom: '1px solid var(--border)', padding: '0.75rem 1.25rem',
   display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-sidebar)',
-})
+}
+
 const panelBody: React.CSSProperties = { padding: '1.25rem' }
 const inputStyle: React.CSSProperties = {
   ...mono, width: '100%', fontSize: '0.78rem', padding: '0.5rem 0.85rem',
@@ -202,7 +203,7 @@ function KeyDictionary({ users }: { users: DictUser[] }) {
 
   if (users.length === 0) return (
     <div style={panel}>
-      <div style={panelHeader()}>
+      <div style={panelHeader}>
         <PanelNum num="00" label="Key Dictionary" />
       </div>
       <div style={panelBody}>
@@ -216,7 +217,7 @@ function KeyDictionary({ users }: { users: DictUser[] }) {
 
   return (
     <div style={panel}>
-      <div style={panelHeader()}>
+      <div style={panelHeader}>
         <PanelNum num="00" label="Key Dictionary" />
         <span style={{ ...mono, fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
           — Source of truth for all user key pairs
@@ -325,7 +326,7 @@ function EncryptPanel({ users }: { users: DictUser[] }) {
 
   return (
     <div style={panel}>
-      <div style={panelHeader()}>
+      <div style={panelHeader}>
         <PanelNum num="01" label="Encrypt & Sign" />
       </div>
       <div style={panelBody}>
@@ -421,7 +422,7 @@ function UpdatePasswordPanel({ users, onUpdateUser }: { users: DictUser[]; onUpd
 
   return (
     <div style={panel}>
-      <div style={panelHeader()}>
+      <div style={panelHeader}>
         <PanelNum num="02" label="Update Password" />
       </div>
       <div style={panelBody}>
@@ -488,7 +489,7 @@ function KeyRotationPanel({ users, onUpdateUser }: { users: DictUser[]; onUpdate
 
   return (
     <div style={panel}>
-      <div style={panelHeader('#c0392b')}>
+      <div style={panelHeader}>
         <PanelNum num="03" label="Key Rotation" accent="#c0392b" />
       </div>
       <div style={panelBody}>
@@ -578,7 +579,7 @@ function UpdateRecipientKeyPanel({ users }: { users: DictUser[] }) {
 
   return (
     <div style={panel}>
-      <div style={panelHeader()}>
+      <div style={panelHeader}>
         <PanelNum num="04" label="Update Recipient Key" />
       </div>
       <div style={panelBody}>
@@ -675,7 +676,7 @@ function ValidatePanel() {
 
   return (
     <div style={panel}>
-      <div style={panelHeader()}>
+      <div style={panelHeader}>
         <PanelNum num="05" label="Validate Container" />
       </div>
       <div style={panelBody}>
@@ -782,7 +783,7 @@ function DecryptPanel() {
 
   return (
     <div style={panel}>
-      <div style={panelHeader('var(--text-secondary)')}>
+      <div style={panelHeader}>
         <PanelNum num="06" label="Decrypt" accent="var(--text-secondary)" />
       </div>
       <div style={panelBody}>

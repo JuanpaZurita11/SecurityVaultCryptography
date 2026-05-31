@@ -481,7 +481,7 @@ function AddRecipientsPanel({ users }: { users: GeneratedUser[] }) {
 }
 
 // ── 03 — REMOVE RECIPIENTS ─────────────────────────────
-function RemoveRecipientsPanel({ users }: { users: GeneratedUser[] }) {
+function RemoveRecipientsPanel() {
   const [containerFile, setContainerFile] = useState<File | null>(null)
   const [container, setContainer]         = useState<any | null>(null)
   const [ownerPrivFile, setOwnerPrivFile] = useState<File | null>(null)
@@ -592,7 +592,7 @@ function RemoveRecipientsPanel({ users }: { users: GeneratedUser[] }) {
 }
 
 // ── 04 — DECRYPT PANEL ─────────────────────────────────
-function DecryptPanel({ users }: { users: GeneratedUser[] }) {
+function DecryptPanel() {
   const [containerFile, setContainerFile] = useState<File | null>(null)
   const [container, setContainer]         = useState<any | null>(null)
   const [userId, setUserId]               = useState('')
@@ -708,8 +708,8 @@ export default function D5Demo() {
       <KeysPanel users={users} />
       <EncryptPanel users={users} />
       <AddRecipientsPanel users={users} />
-      <RemoveRecipientsPanel users={users} />
-      <DecryptPanel users={users} />
+      <RemoveRecipientsPanel/>
+      <DecryptPanel />
     </div>
   )
 }
