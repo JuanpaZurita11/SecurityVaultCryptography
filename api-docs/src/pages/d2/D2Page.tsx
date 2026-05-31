@@ -2,6 +2,7 @@ import {
   PageHeader, Section, SubHeading, P, Code, CodeBlock,
   Callout, ParamTable, Returns, Throws, MethodSignature,
 } from '../../components/DocPrimitives';
+import D2Demo from './D2Demo';
 
 
 // ── Code snippets ──────────────────────────────────────
@@ -208,7 +209,7 @@ export default function D2Page() {
 
       {/* ── 4. Demo ── */}
       <Section id="demo" title="Demo">
-        <h1> Demo </h1>
+        <D2Demo />
       </Section>
     </div>
   )

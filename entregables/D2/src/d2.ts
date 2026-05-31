@@ -252,7 +252,11 @@ export class SymmetricEncryption {
 	 * console.log(new TextDecoder().decode(plaintext)); // "Datos secretos"
 	 * ```
 	 */
-	decrypt_file(container: Container, symmetricKey: Uint8Array): Uint8Array {
+	decrypt_file(container: any, symmetricKey: Uint8Array): Uint8Array {
+		if(!this.verify_container_structure(container)) {
+			throw new Error("Invalid container structure");
+		}
+
 		const nonce = b64ToBytes(container.metaData.nonce);
 		const aad = new TextEncoder().encode(stringify(container.metaData));
 		const chacha = xchacha20poly1305(symmetricKey, nonce, aad);
