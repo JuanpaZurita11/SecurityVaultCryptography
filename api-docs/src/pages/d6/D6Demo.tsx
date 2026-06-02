@@ -26,11 +26,13 @@ const inputStyle: React.CSSProperties = {
 }
 
 const DEFAULT_PASSWORD = 'crypto2026'
-const STATIC_KEYSTORES: { username: string; path: string }[] = [
-  { username: 'Alice', path: '/keystorage/Alice_keystore.json' },
-  { username: 'Bob',   path: '/keystorage/Bob_keystore.json' },
-]
+const baseURL = import.meta.env.BASE_URL;
 
+const STATIC_KEYSTORES: { username: string; path: string }[] = [
+  // Quitamos la '/' inicial de los paths para que se unan correctamente a baseURL
+  { username: 'Alice', path: `${baseURL}keystorage/Alice_keystore.json` },
+  { username: 'Bob',   path: `${baseURL}keystorage/Bob_keystore.json` },
+];
 // ── Types ──────────────────────────────────────────────
 interface DictUser { username: string; password: string; keyStorage: KeyStorage }
 

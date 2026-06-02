@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState } from 'react';
 
 /* ── Section wrapper ─────────────────────────────────── */
 export function Section({
@@ -50,6 +50,13 @@ export function PageHeader({
   title: string
   subtitle: string
 }) {
+  const handleScrollToDemo = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const demoSection = document.getElementById('demo');
+    if (demoSection) {
+      demoSection.scrollIntoView({ behavior: 'smooth' , block: 'start' });
+    }
+  };
   return (
     <div style={{ marginBottom: '3rem', paddingBottom: '2rem', borderBottom: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
@@ -66,7 +73,8 @@ export function PageHeader({
           {badge}
         </span>
         <a
-          href="#demo"
+          href='#demo'
+          onClick={handleScrollToDemo}
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '0.72rem',
